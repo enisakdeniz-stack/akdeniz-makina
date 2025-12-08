@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>CNC Takip Pro</title>
+
+    <!-- LOGO AYARLARI -->
+    <link rel="apple-touch-icon" href="https://i.ibb.co/Y7LRMkr3/1-A468574-4-AFF-42-EA-81-EA-7756-D9017-D56.png">
+    <link rel="shortcut icon" href="https://i.ibb.co/Y7LRMkr3/1-A468574-4-AFF-42-EA-81-EA-7756-D9017-D56.png">
+
+    <meta name="apple-mobile-web-app-title" content="CNC Takip">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#0f172a">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <style>
+        body { -webkit-tap-highlight-color: transparent; }
+        .safe-pt { padding-top: env(safe-area-inset-top); }
+        .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
+        .slide-up { animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        .fade-in-out { animation: fadeInOut 2s ease-in-out forwards; }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        @keyframes fadeInOut { 0% { opacity: 0; transform: translateY(10px); } 10% { opacity: 1; transform: translateY(0); } 90% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-10px); } }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800">
+    <div id="root"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        const { useState, useEffect, useMemo } = React;
+
+        // SENİN AYARLARIN (OTOMATİK EKLENDİ)
+        const firebaseConfig = {
+            apiKey: "AIzaSyDb--JGJG7gdHcAXXGtvwT9FmrRnxjvCvo",
+            authDomain: "cnc-takip-460b6.firebaseapp.com",
+            projectId: "cnc-takip-460b6",
+            storageBucket: "cnc-takip-460b6.firebasestorage.app",
+            messagingSenderId: "cnc-takip-460b6.firebasestorage.app",
+            appId: "1:627287710354:web:4b04d452c51ac793bda44b"
+        };
+
+        const LOGO_LINKI = "https://i.ibb.co/Y7LRMkr3/1-A468574-4-AFF-42-EA-81-EA-7756-D9017-D56.png"; 
+
+        // Firebase Başlatma
+        let app;
+        let db;
+        try {
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+        } catch (e) {
+            console.error("Firebase Hatası:", e);
+        }
+
+        // İKONLAR
+        const IconSave = () => React.createElement("svg", {xmlns:"http://www.w3.org/2000/svg", width:"20", height:"20", viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:"2", strokeLinecap:"round", strokeLinejoin:"round"}, React.createElement("path", {d:"M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"}), React.createElement("polyline", {points:"17 21 17 13 7 13 7 21"}), React.createElement("polyline", {points:"7 3 7 8 15 8"}));
+        const IconCheckSquare = () => React.createElement("svg", {xmlns:"http://www.w3.org/2000/svg", width:"16", height:"16", viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:"2", strokeLinecap:"round", strokeLinejoin:"round"}, React.createElement("polyline", {points:"9 11 12 14 22 4"}), React.createElement("path", {d:"M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"}));
+        const IconHistory = () => React.createElement("svg", {xmlns:"http://www.w3.org/2000/svg", width:"16", height:"16", viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:"2", strokeLinecap:"round", strokeLinejoin:"round"}, React.createElement("path", {d:"M3 3v5h5"}), React.createElement("path", {d:"M3.05 13A9 9 0 1 0 6 5.3L3 8"}));
+        const IconClose = () => React.createElement("svg", {xmlns:"http://www.w3.org/2000/svg", width:"24", height:"24", viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:"2", strokeLinecap:"round", strokeLinejoin:"round"}, React.createElement("path", {d:"M18 6 6 18"}), React.createElement("path", {d:"m6 6 12 12"}));
+        const IconCheck = () => React.createElement("svg", {xmlns:"http://www.w3.org/2000/svg", width:"20", height:"20", viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:"2", strokeLinecap:"round", strokeLinejoin:"round"}, React.createElement("polyline", {points:"20 6 9 17 4 12"}));
+        const IconEdit = () => React.createElement("svg", {xmlns:"http://www.w3.org/2000/svg", width:"14", height:"14", viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:"2", strokeLinecap:"round", strokeLinejoin:"round"}, React.createElement("path", {d:"M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"}));
+        const IconTrash = () => React.createElement("svg", {xmlns:"http://www.w3.org/2000/svg", width:"16", height:"16", viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:"2", strokeLinecap:"round", strokeLinejoin:"round"}, React.createElement("path", {d:"M3 6h18"}), React.createElement("path", {d:"M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"}), React.createElement("path", {d:"M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"}));
+
+        function App() {
+            const MACHINES = [
+                { id: 'T5', name: 'Makina T5', color: 'bg-orange-600', border: 'border-orange-600', text: 'text-orange-600' },
+                { id: 'A25', name: 'Makina A25', color: 'bg-blue-600', border: 'border-blue-600', text: 'text-blue-600' },
+                { id: 'A32', name: 'Makina A32', color: 'bg-emerald-600', border: 'border-emerald-600', text: 'text-emerald-600' }
+            ];
+
+            const [activeTab, setActiveTab] = useState('entry');
+            const [activeMachine, setActiveMachine] = useState(MACHINES[0].id);
+            const [partName, setPartName] = useState('');
+            const [dailyCount, setDailyCount] = useState('');
+            const [selectedHistoryDate, setSelectedHistoryDate] = useState(new Date().toISOString().split('T')[0]);
+            const [showHistoryModal, setShowHistoryModal] = useState(false);
+            const [isLoading, setIsLoading] = useState(true);
+            const [showToast, setShowToast] = useState(false);
+            
+            // Düzenleme (Edit) State'leri
+            const [editLog, setEditLog] = useState(null);
+            const [showEditModal, setShowEditModal] = useState(false);
+
+            // Veritabanı
+            const [logs, setLogs] = useState([]);
+            const [batchResets, setBatchResets] = useState([]);
+
+            useEffect(() => {
+                const qLogs = query(collection(db, "logs"), orderBy("timestamp", "desc"));
+                const unsubLogs = onSnapshot(qLogs, (snapshot) => {
+                    setLogs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                    setIsLoading(false);
+                });
+                const qResets = query(collection(db, "resets"), orderBy("resetDate", "desc"));
+                const unsubResets = onSnapshot(qResets, (snapshot) => {
+                    setBatchResets(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                });
+                return () => { unsubLogs(); unsubResets(); };
+            }, []);
+
+            const uniqueProducts = useMemo(() => Array.from(new Set(logs.map(l => l.partName))).sort(), [logs]);
+            const isKnownProduct = uniqueProducts.includes(partName.toUpperCase().trim());
+
+            // İstatistik Hesaplama
+            const getStats = (pName) => {
+                if (!pName) return { daily: 0, batch: 0, yearly: 0 };
+                const pNameUpper = pName.toUpperCase().trim();
+                const now = new Date();
+                const todayStr = now.toISOString().split('T')[0];
+                const resets = batchResets.filter(r => r.partName === pNameUpper).sort((a,b) => new Date(b.resetDate) - new Date(a.resetDate));
+                const lastReset = resets.length ? new Date(resets[0].resetDate) : new Date(0);
+                let s = { daily: 0, batch: 0, yearly: 0 };
+                logs.forEach(l => {
+                    if (l.partName === pNameUpper) {
+                        if (new Date(l.date).getFullYear() === now.getFullYear()) s.yearly += l.count;
+                        if (l.date === todayStr) s.daily += l.count;
+                        const logTime = new Date(l.timestamp);
+                        if (logTime > lastReset) s.batch += l.count;
+                    }
+                });
+                return s;
+            };
+
+            const stats = getStats(partName);
+            const mConfig = MACHINES.find(m => m.id === activeMachine);
+
+            // --- YENİ GRUPLAMA MANTIĞI (PARTİLERE GÖRE) ---
+            const groupedHistory = useMemo(() => {
+                if(!partName) return [];
+                const pNameUpper = partName.toUpperCase().trim();
+                const pLogs = logs.filter(l => l.partName === pNameUpper);
+                const pResets = batchResets.filter(r => r.partName === pNameUpper).sort((a,b) => new Date(b.resetDate) - new Date(a.resetDate));
+                
+                let batches = [];
+                let lastResetTime = pResets.length > 0 ? new Date(pResets[0].resetDate) : new Date(0);
+                
+                // 1. ŞU ANKİ PARTİ (Aktif)
+                const activeLogs = pLogs.filter(l => new Date(l.timestamp) > lastResetTime);
+                if (activeLogs.length > 0 || pResets.length === 0) {
+                    batches.push({
+                        title: "ŞU ANKİ PARTİ (DEVAM EDİYOR)",
+                        logs: activeLogs,
+                        total: activeLogs.reduce((a, b) => a + b.count, 0),
+                        isCurrent: true,
+                        date: "Şimdi"
+                    });
+                } else {
+                     batches.push({
+                        title: "ŞU ANKİ PARTİ",
+                        logs: [],
+                        total: 0,
+                        isCurrent: true,
+                        date: "Şimdi"
+                     });
+                }
+
+                // 2. GEÇMİŞ PARTİLER (Bitenler)
+                for (let i = 0; i < pResets.length; i++) {
+                    const currentReset = new Date(pResets[i].resetDate);
+                    const prevReset = i + 1 < pResets.length ? new Date(pResets[i+1].resetDate) : new Date(0);
+                    
+                    const batchLogs = pLogs.filter(l => {
+                        const lt = new Date(l.timestamp);
+                        return lt <= currentReset && lt > prevReset;
+                    });
+
+                    if (batchLogs.length > 0) {
+                        batches.push({
+                            title: "BİTEN PARTİ",
+                            logs: batchLogs,
+                            total: batchLogs.reduce((a, b) => a + b.count, 0),
+                            isCurrent: false,
+                            date: currentReset.toLocaleDateString('tr-TR')
+                        });
+                    }
+                }
+                return batches;
+            }, [logs, batchResets, partName]);
+
+            // --- YENİ FONKSİYON: O anki kümülatif toplamı hesapla ---
+            const getRunningBatchTotal = (currentLog) => {
+                const pName = currentLog.partName;
+                const logTime = new Date(currentLog.timestamp);
+
+                // 1. Bu parçaya ait resetleri bul
+                const pResets = batchResets
+                    .filter(r => r.partName === pName)
+                    .sort((a,b) => new Date(b.resetDate) - new Date(a.resetDate));
+                
+                // 2. Parti Başlangıcını Bul (Log zamanından önceki son reset)
+                const lastReset = pResets.find(r => logTime > new Date(r.resetDate));
+                const startTime = lastReset ? new Date(lastReset.resetDate) : new Date(0);
+
+                // 3. Başlangıçtan bu log anına kadar olanları topla
+                const total = logs
+                    .filter(l => 
+                        l.partName === pName && 
+                        new Date(l.timestamp) > startTime && 
+                        new Date(l.timestamp) <= logTime
+                    )
+                    .reduce((sum, item) => sum + item.count, 0);
+                
+                return total;
+            };
+
+            const handleSave = async () => {
+                if (!partName || !dailyCount) return;
+                try {
+                    await addDoc(collection(db, "logs"), {
+                        machineId: activeMachine,
+                        partName: partName.toUpperCase().trim(),
+                        count: parseInt(dailyCount),
+                        date: new Date().toISOString().split('T')[0],
+                        timestamp: new Date().toISOString()
+                    });
+                    setPartName(''); setDailyCount(''); setShowToast(true); setTimeout(() => setShowToast(false), 2000);
+                } catch (e) { alert('Hata: ' + e.message); }
+            };
+
+            const handleBatchFinish = async () => {
+                if(confirm(partName + ' için üretim PARTİSİNİ BİTİRMEK ve arşive kaldırmak istiyor musunuz?')) {
+                    try { await addDoc(collection(db, "resets"), { partName: partName.toUpperCase().trim(), resetDate: new Date().toISOString() }); } catch (e) { alert('Hata: ' + e.message); }
+                }
+            };
+
+            const handleEditStart = (logItem) => {
+                setEditLog({ ...logItem }); 
+                setShowEditModal(true);
+            };
+
+            const handleEditSave = async () => {
+                if(!editLog) return;
+                try {
+                    await updateDoc(doc(db, "logs", editLog.id), {
+                        count: parseInt(editLog.count),
+                        date: editLog.date, 
+                        partName: editLog.partName.toUpperCase() 
+                    });
+                    setShowEditModal(false); setEditLog(null); alert("Kayıt güncellendi.");
+                } catch (e) { alert("Güncelleme hatası: " + e.message); }
+            };
+
+            const handleDeleteLog = async () => {
+                if(!editLog) return;
+                if(confirm("Silmek istediğinize emin misiniz?")) {
+                    try { await deleteDoc(doc(db, "logs", editLog.id)); setShowEditModal(false); setEditLog(null); alert("Kayıt silindi."); } catch (e) { alert("Silme hatası: " + e.message); }
+                }
+            };
+
+            return React.createElement("div", {className: "min-h-screen pb-20 font-sans safe-pt bg-slate-50 relative"},
+                showToast && React.createElement("div", {className: "fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-emerald-500 text-white px-6 py-3 rounded-full shadow-lg flex items-center gap-2 fade-in-out"}, React.createElement(IconCheck), React.createElement("span", {className: "font-bold"}, "Kaydedildi")),
+                
+                React.createElement("div", {className: "bg-slate-900 text-white p-4 shadow-md sticky top-0 z-20 flex justify-between items-center"},
+                    React.createElement("h1", {className: "text-lg font-bold flex gap-2 items-center"}, 
+                        React.createElement("img", {src: LOGO_LINKI, className: "w-8 h-8 rounded-full border border-slate-600 object-cover bg-white"}),
+                        " CNC Takip ", 
+                        isLoading && React.createElement("span", {className: "text-[10px] bg-yellow-500 text-black px-1 rounded animate-pulse"}, "Bağlanıyor...")
+                    ),
+                    React.createElement("div", {className: "flex bg-slate-800 rounded p-1"},
+                        React.createElement("button", {onClick: ()=>setActiveTab('entry'), className: `px-3 py-1 rounded text-sm ${activeTab==='entry'?'bg-slate-600 text-white':'text-slate-400'}`}, "Giriş"),
+                        React.createElement("button", {onClick: ()=>setActiveTab('history'), className: `px-3 py-1 rounded text-sm ${activeTab==='history'?'bg-slate-600 text-white':'text-slate-400'}`}, "Geçmiş")
+                    )
+                ),
+                
+                React.createElement("main", {className: "max-w-md mx-auto p-4 space-y-4"},
+                    activeTab === 'entry' && React.createElement("div", {className: "space-y-6"},
+                        React.createElement("div", {className: "grid grid-cols-3 gap-2"}, MACHINES.map(m => React.createElement("button", {key: m.id, onClick: ()=>setActiveMachine(m.id), className: `py-3 rounded-xl border-b-4 transition-all active:scale-95 ${activeMachine===m.id ? m.color+' '+m.border+' text-white' : 'bg-white text-gray-500 shadow-sm'}`}, React.createElement("div", {className: "text-[10px] opacity-80 font-bold"}, "MAKİNA"), React.createElement("div", {className: "font-bold"}, m.id)))),
+                        React.createElement("div", {className: "bg-white rounded-2xl shadow-sm border border-slate-200 p-5 relative overflow-hidden"},
+                            React.createElement("div", {className: `absolute left-0 top-0 w-1.5 h-full ${mConfig.color}`}),
+                            React.createElement("div", {className: "mb-4"},
+                                React.createElement("div", {className: "flex justify-between mb-1 items-end"}, React.createElement("label", {className: "text-xs font-bold text-gray-400"}, "PARÇA KODU"), partName && React.createElement("span", {className: `text-[10px] px-2 py-0.5 rounded font-bold ${isKnownProduct?'bg-blue-100 text-blue-700':'bg-green-100 text-green-700'}`}, isKnownProduct?'KAYITLI':'YENİ')),
+                                React.createElement("input", {list: "prods", value: partName, onChange: e=>setPartName(e.target.value), className: "w-full p-3 bg-slate-50 border rounded-xl font-bold uppercase text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400", placeholder: "Örn: MİL-1", autoComplete: "off"}),
+                                React.createElement("datalist", {id: "prods"}, uniqueProducts.map(p=>React.createElement("option", {key: p, value: p})))
+                            ),
+                            partName && React.createElement("div", {className: "mb-5 bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-3"},
+                                React.createElement("div", {className: "grid grid-cols-3 gap-2 text-center"},
+                                    React.createElement("div", {className: "bg-white rounded p-1 shadow-sm"}, React.createElement("div", {className: "text-[9px] font-bold text-gray-400"}, "BUGÜN"), React.createElement("div", {className: "font-bold text-slate-800"}, stats.daily)),
+                                    React.createElement("div", {className: "bg-blue-50 rounded p-1 shadow-sm border border-blue-100 text-blue-700"}, React.createElement("div", {className: "text-[9px] font-bold"}, "BU PARTİ"), React.createElement("div", {className: "font-bold text-lg"}, stats.batch)),
+                                    React.createElement("div", {className: "bg-white rounded p-1 shadow-sm"}, React.createElement("div", {className: "text-[9px] font-bold text-gray-400"}, "YIL"), React.createElement("div", {className: "font-bold text-slate-800"}, stats.yearly))
+                                ),
+                                React.createElement("div", {className: "flex gap-2"},
+                                    React.createElement("button", {onClick: handleBatchFinish, className: "flex-1 py-2.5 bg-red-50 border border-red-200 rounded-lg text-[10px] font-bold text-red-600 flex items-center justify-center gap-1 active:bg-red-100 shadow-sm"}, React.createElement(IconCheckSquare), " KAYDET VE BİTİR"),
+                                    React.createElement("button", {onClick: ()=>setShowHistoryModal(true), className: "flex-[1.5] py-2.5 bg-blue-600 rounded-lg text-[10px] font-bold text-white flex items-center justify-center gap-1 active:bg-blue-700 shadow-sm shadow-blue-200"}, React.createElement(IconHistory), " GEÇMİŞİ GÖR")
+                                )
+                            ),
+                            React.createElement("div", {className: "mb-6"}, React.createElement("label", {className: "text-xs font-bold text-gray-400"}, "ÜRETİLEN ADET"), React.createElement("input", {type: "number", value: dailyCount, onChange: e=>setDailyCount(e.target.value), className: "w-full mt-1 p-4 text-4xl font-bold text-center bg-slate-50 border rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400", placeholder: "0", inputMode: "numeric"})),
+                            React.createElement("button", {onClick: handleSave, className: `w-full py-4 rounded-xl text-white font-bold text-lg shadow-lg flex justify-center gap-2 items-center active:scale-95 transition-transform ${mConfig.color}`}, React.createElement(IconSave), " KAYDET")
+                        )
+                    ),
+
+                    activeTab === 'history' && React.createElement("div", {className: "space-y-4"},
+                        React.createElement("div", {className: "bg-white p-4 rounded-xl border border-slate-200 shadow-sm"}, React.createElement("label", {className: "text-xs font-bold text-gray-400 block mb-1"}, "TARİH SEÇİNİZ"), React.createElement("input", {type: "date", value: selectedHistoryDate, onChange: e=>setSelectedHistoryDate(e.target.value), className: "w-full p-2 bg-slate-50 border rounded-lg font-bold text-slate-700"})),
+                        React.createElement("div", {className: "space-y-2 pb-10"},
+                            logs.filter(l=>l.date===selectedHistoryDate).length === 0 ? React.createElement("div", {className: "text-center py-10 text-gray-400 text-sm"}, "Bu tarihte kayıt yok.") : logs.filter(l=>l.date===selectedHistoryDate).map(l => {
+                                // Burada her satır için kümülatif toplamı hesaplıyoruz
+                                const runningTotal = getRunningBatchTotal(l);
+                                return React.createElement("div", {key: l.id, onClick: () => handleEditStart(l), className: "bg-white p-3 rounded-xl border border-slate-100 shadow-sm flex justify-between items-center cursor-pointer active:bg-slate-50"},
+                                    React.createElement("div", {className: "flex items-center gap-3"},
+                                        React.createElement("div", {className: `text-[10px] font-bold text-white px-2 py-1 rounded ${MACHINES.find(m=>m.id===l.machineId)?.color || 'bg-gray-500'}`}, l.machineId),
+                                        React.createElement("div", {}, 
+                                            React.createElement("div", {className: "font-bold text-slate-800 flex items-center gap-2"}, l.partName, React.createElement("span", {className:"text-gray-300 text-[10px]"}, React.createElement(IconEdit))), 
+                                            React.createElement("div", {className: "text-[10px] text-gray-400"}, l.timestamp && l.timestamp.split ? l.timestamp.split('T')[1].slice(0,5) : 'Online')
+                                        )
+                                    ),
+                                    React.createElement("div", {className: "text-right"},
+                                        React.createElement("div", {className: "text-xl font-bold text-slate-700"}, l.count),
+                                        // YENİ EK: Parti Toplamı (Küçük Mavi Yazı)
+                                        React.createElement("div", {className: "text-[10px] font-bold text-blue-500 bg-blue-50 px-1.5 rounded"}, "Top: " + runningTotal)
+                                    )
+                                );
+                            })
+                        ),
+                        logs.filter(l=>l.date===selectedHistoryDate).length > 0 && React.createElement("div", {className: "fixed bottom-0 left-0 w-full bg-slate-900 text-white p-4 flex justify-between items-center shadow-lg safe-pb"}, React.createElement("span", {className: "font-medium text-sm opacity-80"}, "GÜN TOPLAMI"), React.createElement("span", {className: "text-2xl font-bold text-green-400"}, logs.filter(l=>l.date===selectedHistoryDate).reduce((sum, item) => sum + item.count, 0)))
+                    ),
+
+                    showHistoryModal && React.createElement("div", {className: "fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center"},
+                        React.createElement("div", {className: "bg-white w-full sm:max-w-md h-[85vh] rounded-t-2xl sm:rounded-2xl flex flex-col slide-up shadow-2xl"},
+                            React.createElement("div", {className: "p-4 border-b flex justify-between items-center bg-slate-50 rounded-t-2xl"},
+                                React.createElement("div", {}, React.createElement("div", {className: "text-xs font-bold text-gray-400"}, "ÜRÜN GEÇMİŞİ"), React.createElement("div", {className: "text-xl font-bold text-slate-800"}, partName)),
+                                React.createElement("button", {onClick: ()=>setShowHistoryModal(false), className: "p-2 bg-slate-200 rounded-full"}, React.createElement(IconClose))
+                            ),
+                            React.createElement("div", {className: "flex-1 overflow-y-auto p-4 bg-slate-100"},
+                                groupedHistory.map((batch, idx) => 
+                                    React.createElement("div", {key: idx, className: "mb-6"},
+                                        React.createElement("div", {className: "flex items-center justify-between mb-2 px-1"},
+                                            React.createElement("span", {className: "text-xs font-bold text-slate-500 uppercase tracking-wide"}, batch.title),
+                                            batch.isCurrent && React.createElement("span", {className: "text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold"}, "AKTİF")
+                                        ),
+                                        batch.logs.length === 0 
+                                            ? React.createElement("div", {className: "bg-white p-4 rounded-xl text-center text-sm text-gray-400 border border-slate-200 border-dashed"}, "Henüz kayıt yok.")
+                                            : batch.logs.map(log => 
+                                                React.createElement("div", {key: log.id, onClick: () => handleEditStart(log), className: "bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center cursor-pointer mb-2 active:scale-[0.99] transition-transform"},
+                                                    React.createElement("div", {className: "flex items-center gap-3"},
+                                                        React.createElement("div", {className: "flex flex-col items-center bg-slate-50 rounded p-1 min-w-[50px] border border-slate-100"}, React.createElement("span", {className: "text-[10px] font-bold text-slate-600"}, new Date(log.date).getDate() + "/" + (new Date(log.date).getMonth()+1))),
+                                                        React.createElement("div", {}, React.createElement("div", {className: `text-[9px] px-1.5 rounded text-white font-bold inline-block mb-0.5 ${MACHINES.find(m=>m.id===log.machineId)?.color}`}, log.machineId))
+                                                    ),
+                                                    React.createElement("div", {className: "text-lg font-bold text-slate-700 flex items-center gap-2"}, log.count + " ad.", React.createElement(IconEdit))
+                                                )
+                                            ),
+                                        !batch.isCurrent && React.createElement("div", {className: "bg-slate-200 p-2 rounded-lg text-right flex justify-between items-center px-4"},
+                                            React.createElement("span", {className: "text-[10px] font-bold text-slate-500"}, batch.date + " TARİHİNDE BİTTİ"),
+                                            React.createElement("span", {className: "text-sm font-bold text-slate-700"}, "TOPLAM: " + batch.total)
+                                        )
+                                    )
+                                )
+                            ),
+                            React.createElement("div", {className: "p-4 bg-white border-t rounded-b-2xl safe-pb grid grid-cols-2 gap-4"},
+                                React.createElement("div", {className: "bg-blue-50 p-2 rounded-lg text-center border border-blue-100"}, React.createElement("div", {className: "text-[10px] font-bold text-blue-800"}, "ŞU ANKİ PARTİ"), React.createElement("div", {className: "text-xl font-bold text-blue-600"}, stats.batch)),
+                                React.createElement("div", {className: "bg-slate-50 p-2 rounded-lg text-center border border-slate-200"}, React.createElement("div", {className: "text-[10px] font-bold text-slate-500"}, "YILLIK GENEL"), React.createElement("div", {className: "text-xl font-bold text-slate-700"}, stats.yearly))
+                            )
+                        )
+                    ),
+
+                    showEditModal && editLog && React.createElement("div", {className: "fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"},
+                        React.createElement("div", {className: "bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden slide-up"},
+                            React.createElement("div", {className: "bg-slate-100 p-4 border-b flex justify-between items-center"}, React.createElement("h3", {className: "font-bold text-slate-700"}, "Kaydı Düzenle"), React.createElement("button", {onClick: () => setShowEditModal(false), className: "p-2 bg-white rounded-full"}, React.createElement(IconClose))),
+                            React.createElement("div", {className: "p-6 space-y-4"},
+                                React.createElement("div", {}, React.createElement("label", {className: "text-xs font-bold text-gray-400 block mb-1"}, "PARÇA ADI"), React.createElement("input", {type: "text", value: editLog.partName, onChange: (e) => setEditLog({...editLog, partName: e.target.value}), className: "w-full p-3 border rounded-xl font-bold uppercase"})),
+                                React.createElement("div", {}, React.createElement("label", {className: "text-xs font-bold text-gray-400 block mb-1"}, "ADET"), React.createElement("input", {type: "number", value: editLog.count, onChange: (e) => setEditLog({...editLog, count: e.target.value}), className: "w-full p-3 border rounded-xl font-bold text-xl"})),
+                                React.createElement("div", {}, React.createElement("label", {className: "text-xs font-bold text-gray-400 block mb-1"}, "TARİH"), React.createElement("input", {type: "date", value: editLog.date, onChange: (e) => setEditLog({...editLog, date: e.target.value}), className: "w-full p-3 border rounded-xl font-bold"}))
+                            ),
+                            React.createElement("div", {className: "p-4 bg-slate-50 border-t flex gap-3"},
+                                React.createElement("button", {onClick: handleDeleteLog, className: "flex-1 py-3 bg-red-100 text-red-600 rounded-xl font-bold flex justify-center gap-2 items-center"}, React.createElement(IconTrash), " SİL"),
+                                React.createElement("button", {onClick: handleEditSave, className: "flex-[2] py-3 bg-blue-600 text-white rounded-xl font-bold"}, "GÜNCELLE")
+                            )
+                        )
+                    )
+                )
+            );
+        }
+        
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(React.createElement(App));
+    </script>
+</body>
+</html>
