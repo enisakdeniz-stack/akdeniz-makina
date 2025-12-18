@@ -25,7 +25,6 @@
         .animate-fade-in { animation: fadeIn 0.3s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* Yazdırma ayarları: Sadece fiş görünsün */
         @media print {
             .no-print { display: none !important; }
             .print-only { display: block !important; }
@@ -94,8 +93,6 @@
             const [activeTab, setActiveTab] = useState('entry');
             const [isLoading, setIsLoading] = useState(true);
             const [showToast, setShowToast] = useState(false);
-            
-            // VIEW MODE: 'app' (Normal Uygulama) veya 'receipt' (Sadece Fiş Görüntüleme)
             const [viewMode, setViewMode] = useState('app'); 
 
             // STATE - CNC
@@ -140,25 +137,27 @@
                 return () => { unsubLogs(); unsubResets(); unsubSales(); };
             }, []);
 
+            // GÜVENLİ PARA FORMATLAMA (Çökme Önleyici)
             const formatMoney = (val, cur) => {
-                const symbol = CURRENCIES[cur]?.symbol || '₺';
-                return val.toLocaleString('tr-TR', { minimumFractionDigits: 2 }) + ' ' + symbol;
+                const currencyInfo = CURRENCIES[cur] || CURRENCIES.TRY; // Güvenlik: Eğer cur yoksa TRY kullan
+                const symbol = currencyInfo.symbol;
+                return (val || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 }) + ' ' + symbol;
             };
 
             const cartTotals = useMemo(() => {
                 let subTotal = 0;
                 let kdvTotal = 0;
                 cart.forEach(item => {
-                    const itemRawTotal = item.count * item.price;
+                    const itemRawTotal = (item.count || 0) * (item.price || 0);
                     subTotal += itemRawTotal;
                     kdvTotal += (item.kdvValue || 0);
                 });
                 const grandTotal = subTotal + kdvTotal;
-                const activeCurrency = cart.length > 0 ? cart[0].currency : 'TRY';
+                // Güvenlik: Eğer cart[0].currency yoksa varsayılan TRY
+                const activeCurrency = (cart.length > 0 && cart[0].currency) ? cart[0].currency : 'TRY';
                 return { subTotal, kdvTotal, grandTotal, currency: activeCurrency };
             }, [cart]);
 
-            // --- CNC HESAPLAMALAR ---
             const uniqueProducts = useMemo(() => Array.from(new Set(logs.map(l => l.partName))).sort(), [logs]);
             const latestReset = useMemo(() => { if(!partName) return null; const pName = partName.toUpperCase().trim(); const pResets = batchResets.filter(r => r.partName === pName); return pResets.length ? pResets[0] : null; }, [batchResets, partName]);
             const lastRecord = useMemo(() => { if(!partName) return null; const pName = partName.toUpperCase().trim(); let relevantLogs = logs.filter(l => l.partName === pName && l.machineId === activeMachine && l.totalCounter !== undefined); if (latestReset) relevantLogs = relevantLogs.filter(l => new Date(l.timestamp) > new Date(latestReset.resetDate)); return relevantLogs.length > 0 ? relevantLogs[0] : null; }, [logs, latestReset, partName, activeMachine]);
@@ -167,7 +166,6 @@
             const stats = useMemo(() => { if (!partName) return { daily: 0, batch: 0, yearly: 0 }; const pNameUpper = partName.toUpperCase().trim(); const now = new Date(); const todayStr = now.toISOString().split('T')[0]; const resets = batchResets.filter(r => r.partName === pNameUpper).sort((a,b) => new Date(b.resetDate) - new Date(a.resetDate)); const lastReset = resets.length ? new Date(resets[0].resetDate) : new Date(0); let s = { daily: 0, batch: 0, yearly: 0 }; logs.forEach(l => { if (l.partName === pNameUpper) { if (new Date(l.date).getFullYear() === now.getFullYear()) s.yearly += l.count; if (l.date === todayStr) s.daily += l.count; if (new Date(l.timestamp) > lastReset) s.batch += l.count; } }); return s; }, [logs, batchResets, partName]);
             const yesterdaySummary = useMemo(() => { const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1); const yesterdayStr = yesterday.toISOString().split('T')[0]; const filteredLogs = logs.filter(l => l.date === yesterdayStr); const summary = filteredLogs.reduce((acc, log) => { const key = `${log.machineId}-${log.partName}`; if (!acc[key]) acc[key] = { machineId: log.machineId, partName: log.partName, totalProduction: 0, lastCounter: 0, timestamp: log.timestamp, isFinished: false, machineColor: MACHINES.find(m => m.id === log.machineId)?.color || 'bg-gray-500' }; acc[key].totalProduction += log.count; if (new Date(log.timestamp) >= new Date(acc[key].timestamp)) { acc[key].lastCounter = log.totalCounter; acc[key].timestamp = log.timestamp; if (log.type === 'finish') acc[key].isFinished = true; } return acc; }, {}); return Object.values(summary); }, [logs, MACHINES]);
 
-            // --- SATIŞ FİLTRELEME & ARŞİV MANTIĞI ---
             const filteredSales = useMemo(() => {
                 let result = sales;
                 if (!showAllTimeSales) {
@@ -229,7 +227,7 @@
             const openReceiptMode = (sale) => {
                 flushSync(() => {
                     setPrintSale(sale);
-                    setViewMode('receipt'); // Ekranı fiş moduna al
+                    setViewMode('receipt'); 
                 });
             };
 
@@ -243,13 +241,10 @@
                 if (pSubTotal === undefined || pKdvTotal === undefined) { pSubTotal = 0; pKdvTotal = 0; (printSale.items || []).forEach(i => { const raw = i.count * i.price; pSubTotal += raw; pKdvTotal += (i.kdvValue || 0); }); }
                 
                 return React.createElement("div", {className: "min-h-screen bg-white p-4 flex flex-col items-center"},
-                    // Geri Dön Butonu (Yazdırılırken gizlenir)
                     React.createElement("div", {className: "w-full max-w-lg mb-6 flex gap-2 no-print"},
                         React.createElement("button", {onClick: () => setViewMode('app'), className: "flex-1 py-3 bg-slate-100 rounded-xl font-bold text-slate-600 flex justify-center items-center gap-2"}, "GERİ DÖN"),
                         React.createElement("button", {onClick: () => window.print(), className: "flex-[2] py-3 bg-blue-600 rounded-xl font-bold text-white flex justify-center items-center gap-2 shadow-lg"}, React.createElement(IconPrinter), " YAZDIR")
                     ),
-
-                    // Asıl Fiş Kağıdı
                     React.createElement("div", {id: "receipt-paper", className: "w-full max-w-lg bg-white border border-gray-200 p-8 shadow-2xl print:shadow-none print:border-none print:p-0 print:w-full"},
                         React.createElement("div", {className: "border-b-2 border-black pb-4 mb-4"}, React.createElement("h1", {className: "text-2xl font-bold text-center"}, "AKDENİZ MAKİNA CNC"), React.createElement("p", {className: "text-sm text-center mt-1"}, "Tel: 0555 555 55 55 | İzmir"), React.createElement("h2", {className: "text-xl font-bold mt-6 text-center border-t border-black pt-4"}, "TESLİM FİŞİ / FATURA")),
                         React.createElement("div", {className: "flex justify-between mb-6 text-sm"}, React.createElement("div", {}, React.createElement("strong", {}, "SAYIN: "), React.createElement("div", {className:"uppercase font-semibold"}, printSale.customer), React.createElement("div", {className:"mt-1 text-xs text-gray-500"}, "Tarih: " + new Date(printSale.date).toLocaleDateString('tr-TR'))), React.createElement("div", {className: "text-right"}, React.createElement("strong", {}, "Fiş No: "), React.createElement("div", {}, printSale.timestamp.slice(-6)))),
@@ -266,19 +261,14 @@
                 );
             };
 
-            // EĞER FİŞ MODUNDAYSAK SADECE FİŞİ GÖSTER
             if (viewMode === 'receipt') {
                 return React.createElement(ReceiptView);
             }
 
-            // NORMAL UYGULAMA GÖRÜNÜMÜ
             return React.createElement("div", {className: "min-h-screen pb-20 font-sans safe-pt bg-slate-50 relative"},
-                
-                // AUTOCOMPLETE LISTELERİ
                 React.createElement("datalist", {id: "saleCustomerList"}, uniqueCustomers.map(c => React.createElement("option", {key: c, value: c}))),
                 React.createElement("datalist", {id: "saleProductList"}, uniqueSalesProducts.map(p => React.createElement("option", {key: p, value: p}))),
                 
-                // MODAL SİSTEMİ
                 showModal && React.createElement("div", {className: "fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 no-print"},
                     React.createElement("div", {className: "bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl text-center animate-fade-in"},
                          (modalType === 'delete_sale') && React.createElement("div", {}, 
@@ -298,7 +288,6 @@
                 
                 showEditModal && editLog && React.createElement("div", {className: "fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 no-print"}, React.createElement("div", {className: "bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden"}, React.createElement("div", {className: "bg-slate-100 p-4 border-b flex justify-between items-center"}, React.createElement("h3", {className: "font-bold"}, "Kaydı Düzenle"), React.createElement("button", {onClick: () => setShowEditModal(false)}, React.createElement(IconClose))), React.createElement("div", {className: "p-6 space-y-4"}, React.createElement("div", {}, React.createElement("label", {className: "text-xs font-bold text-gray-400"}, "MAKİNE"), React.createElement("div", {className: "grid grid-cols-3 gap-2 mt-1"}, MACHINES.map(m => React.createElement("button", {key: m.id, onClick: () => setEditLog({...editLog, machineId: m.id}), className: `p-2 rounded-lg text-xs font-bold border ${editLog.machineId === m.id ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-gray-500 border-gray-200'}`}, m.id)))), React.createElement("div", {}, React.createElement("label", {className: "text-xs font-bold text-gray-400"}, "MAKİNE SAYACI (Total)"), React.createElement("input", {type: "number", value: editLog.totalCounter || '', onChange: (e) => setEditLog({...editLog, totalCounter: e.target.value}), className: "w-full p-3 border rounded-xl font-bold text-lg bg-yellow-50"})), React.createElement("div", {}, React.createElement("label", {className: "text-xs font-bold text-gray-400"}, "ÜRETİM (Fark)"), React.createElement("input", {type: "number", value: editLog.count, onChange: (e) => setEditLog({...editLog, count: e.target.value}), className: "w-full p-3 border rounded-xl font-bold text-lg"})), React.createElement("div", {}, React.createElement("label", {className: "text-xs font-bold text-gray-400"}, "TARİH"), React.createElement("input", {type: "date", value: editLog.date, onChange: (e) => setEditLog({...editLog, date: e.target.value}), className: "w-full p-3 border rounded-xl"})), React.createElement("div", {className: "flex items-center gap-3 p-3 bg-red-50 rounded-xl border border-red-100"}, React.createElement("input", {type: "checkbox", checked: editLog.type === 'finish', onChange: (e) => setEditLog({...editLog, type: e.target.checked ? 'finish' : null}), className: "w-5 h-5 accent-red-600"}), React.createElement("label", {className: "text-sm font-bold text-red-700"}, "Bu Bitiş Kaydıdır (Bayrak Ekle)"))), React.createElement("div", {className: "p-4 bg-slate-50 border-t flex gap-3"}, React.createElement("button", {onClick: ()=>setModalType('delete')||setShowModal(true), className: "flex-1 py-3 bg-red-100 text-red-600 rounded-xl font-bold"}, "SİL"), React.createElement("button", {onClick: handleEditSave, className: "flex-[2] py-3 bg-blue-600 text-white rounded-xl font-bold"}, "GÜNCELLE")))),
 
-                // HEADER
                 React.createElement("div", {className: "bg-slate-900 text-white p-4 flex justify-between items-center sticky top-0 z-10 no-print"},
                     React.createElement("h1", {className: "font-bold flex gap-2 items-center"}, React.createElement("img", {src: LOGO_LINKI, className: "w-8 h-8 rounded-full bg-white"}), " Akdeniz Takip "),
                     React.createElement("div", {className: "bg-slate-800 rounded p-1 flex gap-1"},
@@ -309,8 +298,6 @@
                 ),
 
                 React.createElement("main", {className: "max-w-md mx-auto p-4 space-y-4 no-print"},
-                    
-                    // --- CNC SEKME (EKSİKSİZ) ---
                     activeTab === 'entry' && React.createElement("div", {className: "space-y-6"},
                          React.createElement("div", {className: "grid grid-cols-3 gap-2"}, MACHINES.map(m => React.createElement("button", {key: m.id, onClick: ()=>setActiveMachine(m.id), className: `py-3 rounded-xl border-b-4 ${activeMachine===m.id ? m.color+' text-white' : 'bg-white'}`}, m.id))),
                          React.createElement("div", {className: "bg-white p-5 rounded-2xl shadow-sm border space-y-4"},
@@ -327,10 +314,7 @@
                         logs.filter(l=>l.date===selectedHistoryDate).map(l => { const mColor = MACHINES.find(m => m.id === l.machineId)?.color || 'bg-gray-500'; return React.createElement("div", {key: l.id, onClick: ()=>{setEditLog(l); setShowEditModal(true);}, className: `bg-white p-3 rounded-xl border mb-2 flex justify-between items-center cursor-pointer active:bg-slate-50 ${l.type==='finish'?'border-red-300 bg-red-50':''}`}, React.createElement("div", {}, React.createElement("span", {className: `text-xs font-bold text-white px-2 py-1 rounded mr-2 ${mColor}`}, l.machineId), React.createElement("span", {className: "font-bold"}, l.partName)), React.createElement("div", {className: "text-right"}, React.createElement("div", {className: "font-bold text-lg flex items-center justify-end gap-2"}, l.count, l.type === 'finish' && React.createElement("span", {className:"text-[10px] bg-red-600 text-white px-1 rounded flex items-center gap-1"}, "BİTTİ", React.createElement(IconFlag, {className:"w-3 h-3 text-white"}))), React.createElement("div", {className: "text-sm font-bold text-gray-500"}, "Toplam (Sayaç): " + (l.totalCounter || '-')))); })
                     ),
 
-                    // --- SATIŞ SEKME (EKSİKSİZ) ---
                     activeTab === 'sales' && React.createElement("div", {className: "space-y-4"},
-                        
-                        // ÜST PANEL
                         React.createElement("div", {className: "flex gap-2"},
                             React.createElement("button", {onClick: ()=> setIsSalesFormOpen(!isSalesFormOpen), className: `flex-1 py-3 font-bold rounded-xl shadow-lg transition active:scale-95 ${isSalesFormOpen ? 'bg-slate-200' : 'bg-purple-600 text-white shadow-purple-200'}`}, 
                                 isSalesFormOpen ? "KAPAT" : (editingSaleId ? "DÜZENLEMEYİ KAPAT" : "+ YENİ SATIŞ")
@@ -338,7 +322,6 @@
                             React.createElement("button", {onClick: ()=>setShowReportModal(true), className: "w-12 bg-white text-purple-600 border border-purple-100 rounded-xl flex items-center justify-center shadow-sm"}, React.createElement(IconChart))
                         ),
 
-                        // SATIŞ FORMU
                         isSalesFormOpen && React.createElement("div", {className: "bg-white p-4 rounded-2xl shadow-sm border border-purple-100 space-y-3 animate-fade-in"},
                             React.createElement("div", {className: "flex gap-2"},
                                 React.createElement("input", {type: "date", value: salesDate, onChange: e=>setSalesDate(e.target.value), className: "w-1/3 p-2 border rounded-lg font-bold text-sm"}),
@@ -357,9 +340,11 @@
                                 )
                             ),
                             cart.length > 0 && React.createElement("div", {className: "space-y-2 pt-2"},
-                                cart.map(item => React.createElement("div", {key: item.id, className: "flex justify-between text-xs border-b pb-2"}, React.createElement("div", {}, React.createElement("div",{className:"font-bold"},item.product), React.createElement("div",{className:"text-slate-400"},`${item.count} x ${item.price} ${CURRENCIES[item.currency].symbol}`)), React.createElement("div", {className:"flex gap-2 items-center"}, React.createElement("span",{className:"font-bold"},formatMoney(item.total, item.currency)), React.createElement("button", {onClick:()=>setCart(cart.filter(c=>c.id!==item.id))}, React.createElement(IconClose,{width:14}))))),
+                                cart.map(item => React.createElement("div", {key: item.id, className: "flex justify-between text-xs border-b pb-2"}, 
+                                    React.createElement("div", {}, React.createElement("div",{className:"font-bold"},item.product), 
+                                    React.createElement("div",{className:"text-slate-400"},`${item.count} x ${item.price} ${CURRENCIES[item.currency]?.symbol || '₺'}`)), // Güvenli Erişim
+                                    React.createElement("div", {className:"flex gap-2 items-center"}, React.createElement("span",{className:"font-bold"},formatMoney(item.total, item.currency)), React.createElement("button", {onClick:()=>setCart(cart.filter(c=>c.id!==item.id))}, React.createElement(IconClose,{width:14}))))),
                                 
-                                // SEPET ALTI DETAYLI TOPLAM (GERİ GELDİ)
                                 React.createElement("div", {className: "bg-slate-50 p-3 rounded-lg mt-3 text-sm space-y-1 text-right"},
                                     React.createElement("div", {className: "flex justify-between text-slate-500"}, React.createElement("span", {}, "Ara Toplam"), React.createElement("span", {}, formatMoney(cartTotals.subTotal, cartTotals.currency))),
                                     React.createElement("div", {className: "flex justify-between text-slate-500"}, React.createElement("span", {}, "KDV Toplam"), React.createElement("span", {}, formatMoney(cartTotals.kdvTotal, cartTotals.currency))),
@@ -370,7 +355,6 @@
                             )
                         ),
 
-                        // ARŞİV VE ARAMA PANELİ
                         React.createElement("div", {className: "bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-3"},
                             React.createElement("div", {className: "flex items-center justify-between border-b pb-2 mb-2"},
                                 React.createElement("h3", {className: "text-xs font-black text-slate-400 uppercase flex items-center gap-1"}, React.createElement(IconCalendar, {width:16}), "SATIŞ ARŞİVİ"),
@@ -394,7 +378,6 @@
                             )
                         ),
 
-                        // LİSTELEME
                         React.createElement("div", {className: "space-y-2"},
                             filteredSales.length === 0 ? React.createElement("div", {className: "text-center p-10 text-slate-400 text-sm italic"}, "Bu kriterlere uygun satış bulunamadı.") :
                             filteredSales.map(sale => React.createElement("div", {key: sale.id, className: "bg-white p-4 rounded-xl border border-slate-200 shadow-sm relative animate-fade-in"},
@@ -406,7 +389,7 @@
                                     React.createElement("div", {className: "text-right flex flex-col items-end gap-1"},
                                         React.createElement("div", {className: "font-black text-purple-700"}, formatMoney(sale.grandTotal, sale.currency || 'TRY')),
                                         React.createElement("div", {className: "flex gap-1"},
-                                            React.createElement("button", {onClick: ()=>startEditSale(sale), className: "bg-blue-50 text-blue-600 p-1.5 rounded border border-blue-100"}, React.createElement(IconEdit, {width:16})),
+                                            React.createElement("button", {onClick: (e)=>{e.stopPropagation(); startEditSale(sale);}, className: "bg-blue-50 text-blue-600 p-1.5 rounded border border-blue-100"}, React.createElement(IconEdit, {width:16})),
                                             React.createElement("button", {onClick: (e)=> { e.stopPropagation(); openReceiptMode(sale); }, className: "bg-slate-50 text-slate-600 p-1.5 rounded border"}, React.createElement(IconEye, {width:16})),
                                             React.createElement("button", {onClick: (e)=> askDeleteSale(sale.id, e), className: "bg-red-50 text-red-600 p-1.5 rounded border border-red-100"}, React.createElement(IconTrash, {width:16}))
                                         )
@@ -417,7 +400,6 @@
                     )
                 ),
 
-                // RAPOR MODAL
                 showReportModal && React.createElement("div", {className: "fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 no-print"},
                     React.createElement("div", {className: "bg-white w-full max-w-sm rounded-2xl shadow-2xl p-5 overflow-hidden flex flex-col max-h-[90vh]"},
                         React.createElement("div", {className: "flex justify-between items-center mb-4 border-b pb-2"}, React.createElement("h3", {className: "font-bold text-lg"}, "Yönetim Raporu"), React.createElement("button", {onClick: ()=>setShowReportModal(false), className: "p-2 bg-slate-100 rounded-full"}, React.createElement(IconClose))),
