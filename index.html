@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Akdeniz Takip</title>
+    <title>Akdeniz Takip Pro</title>
 
     <link rel="apple-touch-icon" href="https://i.ibb.co/Y7LRMkr3/1-A468574-4-AFF-42-EA-81-EA-7756-D9017-D56.png">
     <link rel="shortcut icon" href="https://i.ibb.co/Y7LRMkr3/1-A468574-4-AFF-42-EA-81-EA-7756-D9017-D56.png">
@@ -22,13 +22,14 @@
         body { -webkit-tap-highlight-color: transparent; }
         .safe-pt { padding-top: env(safe-area-inset-top); }
         .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* FİŞ YAZDIRMA STİLİ */
+        /* Yazdırma ayarları: Sadece fiş görünsün */
         @media print {
-            body * { visibility: hidden; }
-            #print-area, #print-area * { visibility: visible; }
-            #print-area { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 20px; background: white; color: black; }
             .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            body { background: white; }
         }
     </style>
 </head>
@@ -40,6 +41,7 @@
         import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         const { useState, useEffect, useMemo } = React;
+        const { flushSync } = ReactDOM;
 
         const firebaseConfig = {
             apiKey: "AIzaSyDb--JGJG7gdHcAXXGtvwT9FmrRnxjvCvo",
@@ -61,19 +63,24 @@
 
         const LOGO_LINKI = "https://i.ibb.co/Y7LRMkr3/1-A468574-4-AFF-42-EA-81-EA-7756-D9017-D56.png"; 
 
-        // ICONS
+        const CURRENCIES = {
+            TRY: { label: 'TL', symbol: '₺' },
+            USD: { label: 'USD', symbol: '$' },
+            EUR: { label: 'EUR', symbol: '€' }
+        };
+
         const Icon = (p) => React.createElement("svg", {...p, xmlns:"http://www.w3.org/2000/svg", width:"24", height:"24", viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:"2", strokeLinecap:"round", strokeLinejoin:"round"});
-        const IconSave = () => Icon({children: [React.createElement("path", {d:"M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"}), React.createElement("polyline", {points:"17 21 17 13 7 13 7 21"}), React.createElement("polyline", {points:"7 3 7 8 15 8"})]});
+        const IconCheck = () => Icon({children: [React.createElement("polyline", {points:"20 6 9 17 4 12"})]});
+        const IconEdit = (props) => Icon({...props, children: [React.createElement("path", {d:"M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"})]});
+        const IconTrash = (props) => Icon({...props, className:"text-red-500", children: [React.createElement("path", {d:"M3 6h18"}), React.createElement("path", {d:"M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"}), React.createElement("path", {d:"M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"})]});
+        const IconAlert = () => Icon({className:"text-yellow-500 mx-auto mb-2", width:48, height:48, children: [React.createElement("path", {d:"M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"}), React.createElement("line", {x1:"12", y1:"9", x2:"12", y2:"13"}), React.createElement("line", {x1:"12", y1:"17", x2:"12.01", y2:"17"})]});
         const IconFlag = () => Icon({className:"text-red-600 fill-red-100", children: [React.createElement("path", {d:"M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"}), React.createElement("line", {x1:"4", x2:"4", y1:"22", y2:"15"})]});
         const IconClose = () => Icon({children: [React.createElement("path", {d:"M18 6 6 18"}), React.createElement("path", {d:"m6 6 12 12"})]});
-        const IconCheck = () => Icon({children: [React.createElement("polyline", {points:"20 6 9 17 4 12"})]});
-        const IconEdit = () => Icon({width:14, height:14, children: [React.createElement("path", {d:"M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"})]});
-        const IconTrash = () => Icon({className:"text-red-500", children: [React.createElement("path", {d:"M3 6h18"}), React.createElement("path", {d:"M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"}), React.createElement("path", {d:"M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"})]});
-        const IconAlert = () => Icon({className:"text-yellow-500 mx-auto mb-2", width:48, height:48, children: [React.createElement("path", {d:"M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"}), React.createElement("line", {x1:"12", y1:"9", x2:"12", y2:"13"}), React.createElement("line", {x1:"12", y1:"17", x2:"12.01", y2:"17"})]});
-        
         const IconSearch = () => React.createElement("svg", {xmlns:"http://www.w3.org/2000/svg", width:"20", height:"20", viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:"2", strokeLinecap:"round", strokeLinejoin:"round", className:"text-gray-400"}, React.createElement("circle", {cx:"11", cy:"11", r:"8"}), React.createElement("line", {x1:"21", x2:"16.65", y1:"21", y2:"16.65"}));
         const IconPrinter = () => React.createElement("svg", {xmlns:"http://www.w3.org/2000/svg", width:"18", height:"18", viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:"2", strokeLinecap:"round", strokeLinejoin:"round", className:"text-blue-500"}, React.createElement("polyline", {points:"6 9 6 2 18 2 18 9"}), React.createElement("path", {d:"M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"}), React.createElement("rect", {width:"12", height:"8", x:"6", y:"14"}));
         const IconChart = () => React.createElement("svg", {xmlns:"http://www.w3.org/2000/svg", width:"20", height:"20", viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:"2", strokeLinecap:"round", strokeLinejoin:"round"}, React.createElement("path", {d:"M18 20V10"}), React.createElement("path", {d:"M12 20V4"}), React.createElement("path", {d:"M6 20v-6"}));
+        const IconCalendar = () => React.createElement("svg", {xmlns:"http://www.w3.org/2000/svg", width:"16", height:"16", viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:"2", strokeLinecap:"round", strokeLinejoin:"round"}, React.createElement("rect", {x:"3", y:"4", width:"18", height:"18", rx:"2", ry:"2"}), React.createElement("line", {x1:"16", y1:"2", x2:"16", y2:"6"}), React.createElement("line", {x1:"8", y1:"2", x2:"8", y2:"6"}), React.createElement("line", {x1:"3", y1:"10", x2:"21", y2:"10"}));
+        const IconEye = () => React.createElement("svg", {xmlns:"http://www.w3.org/2000/svg", width:"18", height:"18", viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:"2", strokeLinecap:"round", strokeLinejoin:"round", className:"text-blue-600"}, React.createElement("path", {d:"M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"}), React.createElement("circle", {cx:"12", cy:"12", r:"3"}));
 
         function App() {
             if (dbError) return React.createElement("div", {className: "p-10 text-red-600 font-bold"}, "Hata: " + dbError);
@@ -87,6 +94,9 @@
             const [activeTab, setActiveTab] = useState('entry');
             const [isLoading, setIsLoading] = useState(true);
             const [showToast, setShowToast] = useState(false);
+            
+            // VIEW MODE: 'app' (Normal Uygulama) veya 'receipt' (Sadece Fiş Görüntüleme)
+            const [viewMode, setViewMode] = useState('app'); 
 
             // STATE - CNC
             const [activeMachine, setActiveMachine] = useState(MACHINES[0].id);
@@ -97,8 +107,10 @@
             const [showEditModal, setShowEditModal] = useState(false);
             const [logs, setLogs] = useState([]);
             const [batchResets, setBatchResets] = useState([]);
+            
+            // STATE - MODAL (ORTAK)
             const [showModal, setShowModal] = useState(false);
-            const [modalType, setModalType] = useState(null);
+            const [modalType, setModalType] = useState(null); 
             const [modalData, setModalData] = useState({});
 
             // STATE - SATIŞ
@@ -107,141 +119,91 @@
             const [product, setProduct] = useState('');
             const [count, setCount] = useState('');
             const [price, setPrice] = useState('');
+            const [currency, setCurrency] = useState('TRY');
             const [taxIncluded, setTaxIncluded] = useState(false);
             const [cart, setCart] = useState([]);
             const [sales, setSales] = useState([]);
             const [searchTerm, setSearchTerm] = useState('');
-            const [productSearchTerm, setProductSearchTerm] = useState(''); // YENİ: Ürün Arama
-            const [editingSale, setEditingSale] = useState(null);
+            const [productSearchTerm, setProductSearchTerm] = useState('');
+            const [selectedSalesMonth, setSelectedSalesMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
+            const [showAllTimeSales, setShowAllTimeSales] = useState(false);
+            const [editingSaleId, setEditingSaleId] = useState(null);
             const [printSale, setPrintSale] = useState(null);
             const [isSalesFormOpen, setIsSalesFormOpen] = useState(false);
             const [showReportModal, setShowReportModal] = useState(false);
 
             useEffect(() => {
                 if (!db) return;
-                const unsubLogs = onSnapshot(query(collection(db, "logs"), orderBy("timestamp", "desc")), (snapshot) => {
-                    setLogs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                    setIsLoading(false);
-                });
-                const unsubResets = onSnapshot(query(collection(db, "resets"), orderBy("resetDate", "desc")), (snapshot) => {
-                    setBatchResets(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                });
-                const unsubSales = onSnapshot(query(collection(db, "sales_demo"), orderBy("timestamp", "desc")), (snapshot) => {
-                    setSales(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                });
+                const unsubLogs = onSnapshot(query(collection(db, "logs"), orderBy("timestamp", "desc")), (s) => { setLogs(s.docs.map(d => ({ id: d.id, ...d.data() }))); setIsLoading(false); });
+                const unsubResets = onSnapshot(query(collection(db, "resets"), orderBy("resetDate", "desc")), (s) => setBatchResets(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+                const unsubSales = onSnapshot(query(collection(db, "sales_demo"), orderBy("timestamp", "desc")), (s) => setSales(s.docs.map(d => ({ id: d.id, ...d.data() }))));
                 return () => { unsubLogs(); unsubResets(); unsubSales(); };
             }, []);
 
+            const formatMoney = (val, cur) => {
+                const symbol = CURRENCIES[cur]?.symbol || '₺';
+                return val.toLocaleString('tr-TR', { minimumFractionDigits: 2 }) + ' ' + symbol;
+            };
+
+            const cartTotals = useMemo(() => {
+                let subTotal = 0;
+                let kdvTotal = 0;
+                cart.forEach(item => {
+                    const itemRawTotal = item.count * item.price;
+                    subTotal += itemRawTotal;
+                    kdvTotal += (item.kdvValue || 0);
+                });
+                const grandTotal = subTotal + kdvTotal;
+                const activeCurrency = cart.length > 0 ? cart[0].currency : 'TRY';
+                return { subTotal, kdvTotal, grandTotal, currency: activeCurrency };
+            }, [cart]);
+
             // --- CNC HESAPLAMALAR ---
             const uniqueProducts = useMemo(() => Array.from(new Set(logs.map(l => l.partName))).sort(), [logs]);
-            
-            const latestReset = useMemo(() => {
-                if(!partName) return null;
-                const pName = partName.toUpperCase().trim();
-                const pResets = batchResets.filter(r => r.partName === pName);
-                if(pResets.length === 0) return null;
-                return pResets[0];
-            }, [batchResets, partName]);
-
-            const lastRecord = useMemo(() => {
-                if(!partName) return null;
-                const pName = partName.toUpperCase().trim();
-                let relevantLogs = logs.filter(l => l.partName === pName && l.machineId === activeMachine && l.totalCounter !== undefined);
-                if (latestReset) relevantLogs = relevantLogs.filter(l => new Date(l.timestamp) > new Date(latestReset.resetDate));
-                return relevantLogs.length > 0 ? relevantLogs[0] : null; 
-            }, [logs, latestReset, partName, activeMachine]);
-
+            const latestReset = useMemo(() => { if(!partName) return null; const pName = partName.toUpperCase().trim(); const pResets = batchResets.filter(r => r.partName === pName); return pResets.length ? pResets[0] : null; }, [batchResets, partName]);
+            const lastRecord = useMemo(() => { if(!partName) return null; const pName = partName.toUpperCase().trim(); let relevantLogs = logs.filter(l => l.partName === pName && l.machineId === activeMachine && l.totalCounter !== undefined); if (latestReset) relevantLogs = relevantLogs.filter(l => new Date(l.timestamp) > new Date(latestReset.resetDate)); return relevantLogs.length > 0 ? relevantLogs[0] : null; }, [logs, latestReset, partName, activeMachine]);
             const lastCounterValue = lastRecord ? lastRecord.totalCounter : 0;
             const isFirstRecordOfBatch = !lastRecord;
+            const stats = useMemo(() => { if (!partName) return { daily: 0, batch: 0, yearly: 0 }; const pNameUpper = partName.toUpperCase().trim(); const now = new Date(); const todayStr = now.toISOString().split('T')[0]; const resets = batchResets.filter(r => r.partName === pNameUpper).sort((a,b) => new Date(b.resetDate) - new Date(a.resetDate)); const lastReset = resets.length ? new Date(resets[0].resetDate) : new Date(0); let s = { daily: 0, batch: 0, yearly: 0 }; logs.forEach(l => { if (l.partName === pNameUpper) { if (new Date(l.date).getFullYear() === now.getFullYear()) s.yearly += l.count; if (l.date === todayStr) s.daily += l.count; if (new Date(l.timestamp) > lastReset) s.batch += l.count; } }); return s; }, [logs, batchResets, partName]);
+            const yesterdaySummary = useMemo(() => { const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1); const yesterdayStr = yesterday.toISOString().split('T')[0]; const filteredLogs = logs.filter(l => l.date === yesterdayStr); const summary = filteredLogs.reduce((acc, log) => { const key = `${log.machineId}-${log.partName}`; if (!acc[key]) acc[key] = { machineId: log.machineId, partName: log.partName, totalProduction: 0, lastCounter: 0, timestamp: log.timestamp, isFinished: false, machineColor: MACHINES.find(m => m.id === log.machineId)?.color || 'bg-gray-500' }; acc[key].totalProduction += log.count; if (new Date(log.timestamp) >= new Date(acc[key].timestamp)) { acc[key].lastCounter = log.totalCounter; acc[key].timestamp = log.timestamp; if (log.type === 'finish') acc[key].isFinished = true; } return acc; }, {}); return Object.values(summary); }, [logs, MACHINES]);
 
-            const stats = useMemo(() => {
-                if (!partName) return { daily: 0, batch: 0, yearly: 0 };
-                const pNameUpper = partName.toUpperCase().trim();
-                const now = new Date();
-                const todayStr = now.toISOString().split('T')[0];
-                const resets = batchResets.filter(r => r.partName === pNameUpper).sort((a,b) => new Date(b.resetDate) - new Date(a.resetDate));
-                const lastReset = resets.length ? new Date(resets[0].resetDate) : new Date(0);
-                let s = { daily: 0, batch: 0, yearly: 0 };
-                logs.forEach(l => {
-                    if (l.partName === pNameUpper) {
-                        if (new Date(l.date).getFullYear() === now.getFullYear()) s.yearly += l.count;
-                        if (l.date === todayStr) s.daily += l.count;
-                        if (new Date(l.timestamp) > lastReset) s.batch += l.count;
-                    }
-                });
-                return s;
-            }, [logs, batchResets, partName]);
-
-            const yesterdaySummary = useMemo(() => {
-                const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
-                const yesterdayStr = yesterday.toISOString().split('T')[0];
-                const filteredLogs = logs.filter(l => l.date === yesterdayStr);
-                const summary = filteredLogs.reduce((acc, log) => {
-                    const key = `${log.machineId}-${log.partName}`;
-                    if (!acc[key]) acc[key] = { machineId: log.machineId, partName: log.partName, totalProduction: 0, lastCounter: 0, timestamp: log.timestamp, isFinished: false, machineColor: MACHINES.find(m => m.id === log.machineId)?.color || 'bg-gray-500' };
-                    acc[key].totalProduction += log.count;
-                    if (new Date(log.timestamp) >= new Date(acc[key].timestamp)) {
-                        acc[key].lastCounter = log.totalCounter; acc[key].timestamp = log.timestamp;
-                        if (log.type === 'finish') acc[key].isFinished = true;
-                    }
-                    return acc;
-                }, {});
-                return Object.values(summary);
-            }, [logs, MACHINES]);
-
-            // --- SATIŞ İSTATİSTİKLERİ VE FİLTRELEME (GÜNCELLENDİ) ---
+            // --- SATIŞ FİLTRELEME & ARŞİV MANTIĞI ---
             const filteredSales = useMemo(() => {
                 let result = sales;
-                if (searchTerm) {
-                    result = result.filter(s => s.customer.includes(searchTerm.toUpperCase()));
+                if (!showAllTimeSales) {
+                    result = result.filter(s => s.date && s.date.startsWith(selectedSalesMonth));
                 }
-                if (productSearchTerm) {
-                    result = result.filter(s => s.items && s.items.some(i => i.product.includes(productSearchTerm.toUpperCase())));
-                }
-                
-                // Hiç arama yoksa son 10, varsa hepsi
-                if (!searchTerm && !productSearchTerm) return result.slice(0, 10);
+                if (searchTerm) result = result.filter(s => s.customer.includes(searchTerm.toUpperCase()));
+                if (productSearchTerm) result = result.filter(s => s.items && s.items.some(i => i.product.includes(productSearchTerm.toUpperCase())));
+                if (showAllTimeSales && !searchTerm && !productSearchTerm) return result.slice(0, 20);
                 return result;
-            }, [sales, searchTerm, productSearchTerm]);
+            }, [sales, searchTerm, productSearchTerm, selectedSalesMonth, showAllTimeSales]);
 
             const uniqueCustomers = useMemo(() => [...new Set(sales.map(s => s.customer))].sort(), [sales]);
-            const uniqueSalesProducts = useMemo(() => [...new Set(sales.flatMap(s => s.items || []).map(i => i.product))].sort(), [sales]);
+            const uniqueSalesProducts = useMemo(() => {
+                const saleProds = sales.flatMap(s => s.items || []).map(i => i.product);
+                return [...new Set(saleProds)].sort();
+            }, [sales]);
 
             const salesStats = useMemo(() => {
                 const now = new Date();
-                let monthlyTotal = 0;
-                let yearlyTotal = 0;
-                let monthlyCount = 0;
-
+                let monthlyTotal = 0; let yearlyTotal = 0;
                 sales.forEach(s => {
                     const d = new Date(s.date);
                     if (d.getFullYear() === now.getFullYear()) {
                         yearlyTotal += s.grandTotal;
-                        if (d.getMonth() === now.getMonth()) {
-                            monthlyTotal += s.grandTotal;
-                            monthlyCount++;
-                        }
+                        if (d.getMonth() === now.getMonth()) monthlyTotal += s.grandTotal;
                     }
                 });
-                return { monthlyTotal, yearlyTotal, monthlyCount };
+                return { monthlyTotal, yearlyTotal };
             }, [sales]);
 
             const reportData = useMemo(() => {
-                const productStats = {};
-                const customerStats = {};
-                const currentYear = new Date().getFullYear();
-
+                const productStats = {}; const customerStats = {}; const currentYear = new Date().getFullYear();
                 sales.forEach(s => {
                     if (new Date(s.date).getFullYear() === currentYear) {
-                        if (!customerStats[s.customer]) customerStats[s.customer] = 0;
-                        customerStats[s.customer] += s.grandTotal;
-
-                        if (s.items) {
-                            s.items.forEach(item => {
-                                if (!productStats[item.product]) productStats[item.product] = 0;
-                                productStats[item.product] += item.count;
-                            });
-                        }
+                        if (!customerStats[s.customer]) customerStats[s.customer] = 0; customerStats[s.customer] += s.grandTotal;
+                        if (s.items) { s.items.forEach(item => { if (!productStats[item.product]) productStats[item.product] = 0; productStats[item.product] += item.count; }); }
                     }
                 });
                 const sortedProducts = Object.entries(productStats).sort((a,b) => b[1] - a[1]);
@@ -251,7 +213,7 @@
 
             const mConfig = MACHINES.find(m => m.id === activeMachine) || MACHINES[0];
 
-            // --- AKSİYONLAR (CNC) ---
+            // --- AKSİYONLAR ---
             const handleSaveClick = () => { if(!partName || !inputCounter) return alert("Eksik bilgi!"); const current = parseInt(inputCounter); if(isNaN(current)) return alert("Geçersiz sayı"); if (isFirstRecordOfBatch && current > 0) { setModalType('initial_ask'); setModalData({ current }); setShowModal(true); return; } let production = current - lastCounterValue; if(production < 0) production = 0; setModalType('save'); setModalData({ current, production, prev: lastCounterValue }); setShowModal(true); };
             const handleFinishClick = () => { if(!partName || !inputCounter) return alert("Eksik bilgi!"); const current = parseInt(inputCounter); let production = current - lastCounterValue; if(isFirstRecordOfBatch && current > 0) { setModalType('finish_initial'); setModalData({ current }); setShowModal(true); return; } setModalType('finish'); setModalData({ current, production, prev: lastCounterValue }); setShowModal(true); };
             const executeSave = async (isInitial) => { setShowModal(false); try { const current = parseInt(inputCounter); let production = (isInitial || modalType === 'initial_ask') ? (modalType === 'initial_ask' && !isInitial ? current : 0) : current - lastCounterValue; if(production < 0) production = 0; await addDoc(collection(db, "logs"), { machineId: activeMachine, partName: partName.toUpperCase().trim(), count: production, totalCounter: current, date: new Date().toISOString().split('T')[0], timestamp: new Date().toISOString() }); setInputCounter(''); setShowToast(true); setTimeout(()=>setShowToast(false), 2000); } catch(e) { alert("Hata: " + e.message); } };
@@ -259,62 +221,84 @@
             const handleEditSave = async () => { if(!editLog) return; try { await updateDoc(doc(db, "logs", editLog.id), { machineId: editLog.machineId, count: parseInt(editLog.count), totalCounter: editLog.totalCounter ? parseInt(editLog.totalCounter) : null, date: editLog.date, partName: editLog.partName.toUpperCase(), type: editLog.type }); setShowEditModal(false); setEditLog(null); alert("Güncellendi."); } catch (e) { alert("Hata: " + e.message); } };
             const executeDelete = async () => { setShowModal(false); if(editLog) { await deleteDoc(doc(db, "logs", editLog.id)); setEditLog(null); setShowEditModal(false); } };
 
-            // --- AKSİYONLAR (SATIŞ) ---
-            const handleAddToCart = () => { if (!product || !count || !price) return alert("Eksik bilgi!"); const numCount = parseFloat(count); const numPrice = parseFloat(price); const subTotal = numCount * numPrice; const tax = taxIncluded ? subTotal * 0.20 : 0; setCart([...cart, { id: Date.now(), product: product.toUpperCase(), count: numCount, price: numPrice, taxIncluded, total: subTotal + tax }]); setProduct(''); setCount(''); setPrice(''); };
-            const handleSaveSale = async () => { if (!customer) return alert("Müşteri adı girin."); if (cart.length === 0) return alert("Sepet boş."); try { await addDoc(collection(db, "sales_demo"), { date: salesDate, customer: customer.toUpperCase(), items: cart, grandTotal: cart.reduce((acc, i) => acc + i.total, 0), timestamp: new Date().toISOString() }); setCart([]); setCustomer(''); setIsSalesFormOpen(false); alert("Satış Kaydedildi!"); } catch (e) { alert("Hata: " + e.message); } };
-            const handlePrint = (sale) => { setPrintSale(sale); setTimeout(() => window.print(), 300); };
-            const handleDeleteSale = async (id) => { if(confirm("Silinsin mi?")) { await deleteDoc(doc(db, "sales_demo", id)); setEditingSale(null); } };
+            const handleAddToCart = () => { if (!product || !count || !price) return alert("Eksik bilgi!"); const numCount = parseFloat(count); const numPrice = parseFloat(price); const subTotal = numCount * numPrice; const kdv = taxIncluded ? subTotal * 0.20 : 0; const newItem = { id: Date.now(), product: product.toUpperCase(), count: numCount, price: numPrice, currency: currency, taxIncluded, total: subTotal + kdv, kdvValue: kdv }; setCart([...cart, newItem]); setProduct(''); setCount(''); setPrice(''); };
+            const handleSaveSale = async () => { if (!customer || cart.length === 0) return alert("Hata: Sepet boş."); const saleData = { date: salesDate, customer: customer.toUpperCase(), items: cart, subTotal: cartTotals.subTotal, kdvTotal: cartTotals.kdvTotal, grandTotal: cartTotals.grandTotal, currency: cartTotals.currency, timestamp: new Date().toISOString() }; try { if (editingSaleId) { await updateDoc(doc(db, "sales_demo", editingSaleId), saleData); setEditingSaleId(null); } else { await addDoc(collection(db, "sales_demo"), saleData); } setCart([]); setCustomer(''); setIsSalesFormOpen(false); alert("İşlem Başarılı."); } catch (e) { alert("Hata: " + e.message); } };
+            const startEditSale = (sale) => { setEditingSaleId(sale.id); setCustomer(sale.customer); setSalesDate(sale.date); setCart(sale.items || []); setIsSalesFormOpen(true); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+            
+            // --- TEMİZ FİŞ MODU AÇMA ---
+            const openReceiptMode = (sale) => {
+                flushSync(() => {
+                    setPrintSale(sale);
+                    setViewMode('receipt'); // Ekranı fiş moduna al
+                });
+            };
 
-            const PrintTemplate = () => {
+            const askDeleteSale = (id, e) => { if(e) e.stopPropagation(); setModalData({ saleId: id }); setModalType('delete_sale'); setShowModal(true); };
+            const executeDeleteSale = async () => { setShowModal(false); if(modalData.saleId) { await deleteDoc(doc(db, "sales_demo", modalData.saleId)); setPrintSale(null); setEditingSaleId(null); } };
+
+            // --- FİŞ BİLEŞENİ (YALIN) ---
+            const ReceiptView = () => {
                 if (!printSale) return null;
-                return React.createElement("div", {id: "print-area", className: "hidden"},
-                    React.createElement("div", {className: "border-b-2 border-black pb-4 mb-4"}, React.createElement("h1", {className: "text-2xl font-bold"}, "AKDENİZ MAKİNA CNC"), React.createElement("p", {className: "text-sm"}, "Tel: 0555 555 55 55 | İzmir"), React.createElement("h2", {className: "text-xl font-bold mt-4 text-center"}, "TESLİM FİŞİ / FATURA")),
-                    React.createElement("div", {className: "flex justify-between mb-6"}, React.createElement("div", {}, React.createElement("strong", {}, "SAYIN: "), printSale.customer, React.createElement("br"), React.createElement("span", {}, "Tarih: " + new Date(printSale.date).toLocaleDateString('tr-TR'))), React.createElement("div", {className: "text-right"}, React.createElement("strong", {}, "Fiş No: "), printSale.timestamp.slice(-6))),
-                    React.createElement("table", {className: "w-full border-collapse border border-black mb-6"}, React.createElement("thead", {}, React.createElement("tr", {className: "bg-gray-200"}, React.createElement("th", {className: "border border-black p-2 text-left"}, "Ürün"), React.createElement("th", {className: "border border-black p-2 text-center"}, "Miktar"), React.createElement("th", {className: "border border-black p-2 text-right"}, "Fiyat"), React.createElement("th", {className: "border border-black p-2 text-right"}, "Tutar"))), React.createElement("tbody", {}, (printSale.items || []).map((item, i) => React.createElement("tr", {key: i}, React.createElement("td", {className: "border border-black p-2"}, item.product), React.createElement("td", {className: "border border-black p-2 text-center"}, item.count), React.createElement("td", {className: "border border-black p-2 text-right"}, item.price.toLocaleString('tr-TR') + " ₺"), React.createElement("td", {className: "border border-black p-2 text-right"}, item.total.toLocaleString('tr-TR') + " ₺"))))),
-                    React.createElement("div", {className: "text-right text-xl font-bold"}, "TOPLAM: ", printSale.grandTotal.toLocaleString('tr-TR', {style:'currency', currency:'TRY'}))
+                let pSubTotal = printSale.subTotal; let pKdvTotal = printSale.kdvTotal;
+                if (pSubTotal === undefined || pKdvTotal === undefined) { pSubTotal = 0; pKdvTotal = 0; (printSale.items || []).forEach(i => { const raw = i.count * i.price; pSubTotal += raw; pKdvTotal += (i.kdvValue || 0); }); }
+                
+                return React.createElement("div", {className: "min-h-screen bg-white p-4 flex flex-col items-center"},
+                    // Geri Dön Butonu (Yazdırılırken gizlenir)
+                    React.createElement("div", {className: "w-full max-w-lg mb-6 flex gap-2 no-print"},
+                        React.createElement("button", {onClick: () => setViewMode('app'), className: "flex-1 py-3 bg-slate-100 rounded-xl font-bold text-slate-600 flex justify-center items-center gap-2"}, "GERİ DÖN"),
+                        React.createElement("button", {onClick: () => window.print(), className: "flex-[2] py-3 bg-blue-600 rounded-xl font-bold text-white flex justify-center items-center gap-2 shadow-lg"}, React.createElement(IconPrinter), " YAZDIR")
+                    ),
+
+                    // Asıl Fiş Kağıdı
+                    React.createElement("div", {id: "receipt-paper", className: "w-full max-w-lg bg-white border border-gray-200 p-8 shadow-2xl print:shadow-none print:border-none print:p-0 print:w-full"},
+                        React.createElement("div", {className: "border-b-2 border-black pb-4 mb-4"}, React.createElement("h1", {className: "text-2xl font-bold text-center"}, "AKDENİZ MAKİNA CNC"), React.createElement("p", {className: "text-sm text-center mt-1"}, "Tel: 0555 555 55 55 | İzmir"), React.createElement("h2", {className: "text-xl font-bold mt-6 text-center border-t border-black pt-4"}, "TESLİM FİŞİ / FATURA")),
+                        React.createElement("div", {className: "flex justify-between mb-6 text-sm"}, React.createElement("div", {}, React.createElement("strong", {}, "SAYIN: "), React.createElement("div", {className:"uppercase font-semibold"}, printSale.customer), React.createElement("div", {className:"mt-1 text-xs text-gray-500"}, "Tarih: " + new Date(printSale.date).toLocaleDateString('tr-TR'))), React.createElement("div", {className: "text-right"}, React.createElement("strong", {}, "Fiş No: "), React.createElement("div", {}, printSale.timestamp.slice(-6)))),
+                        React.createElement("table", {className: "w-full border-collapse border border-black mb-6 text-sm"}, React.createElement("thead", {}, React.createElement("tr", {className: "bg-gray-100"}, React.createElement("th", {className: "border border-black p-2 text-left"}, "Ürün"), React.createElement("th", {className: "border border-black p-2 text-center"}, "Mik."), React.createElement("th", {className: "border border-black p-2 text-right"}, "Fiyat"), React.createElement("th", {className: "border border-black p-2 text-right"}, "Tutar"))), React.createElement("tbody", {}, (printSale.items || []).map((item, i) => React.createElement("tr", {key: i}, React.createElement("td", {className: "border border-black p-2"}, item.product), React.createElement("td", {className: "border border-black p-2 text-center"}, item.count), React.createElement("td", {className: "border border-black p-2 text-right"}, formatMoney(item.price, item.currency)), React.createElement("td", {className: "border border-black p-2 text-right"}, formatMoney(item.total, item.currency)))))),
+                        React.createElement("div", {className: "flex justify-end"}, 
+                            React.createElement("div", {className: "w-2/3 space-y-1 text-right text-sm"}, 
+                                React.createElement("div", {className: "flex justify-between"}, React.createElement("span", {}, "Ara Toplam:"), React.createElement("span", {}, formatMoney(pSubTotal, printSale.currency || 'TRY'))), 
+                                React.createElement("div", {className: "flex justify-between"}, React.createElement("span", {}, "Toplam KDV:"), React.createElement("span", {}, formatMoney(pKdvTotal, printSale.currency || 'TRY'))), 
+                                React.createElement("div", {className: "flex justify-between text-xl font-bold border-t border-black pt-2 mt-2"}, React.createElement("span", {}, "GENEL TOPLAM:"), React.createElement("span", {}, formatMoney(printSale.grandTotal, printSale.currency || 'TRY')))
+                            )
+                        ),
+                        React.createElement("div", {className: "mt-10 text-center text-xs text-gray-400"}, "Teşekkür Ederiz.")
+                    )
                 );
             };
 
-            return React.createElement("div", {className: "min-h-screen pb-20 font-sans safe-pt bg-slate-50 relative"},
-                React.createElement(PrintTemplate),
-                showToast && React.createElement("div", {className: "fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-emerald-500 text-white px-6 py-3 rounded-full shadow-lg flex items-center gap-2"}, React.createElement(IconCheck), "Kaydedildi"),
-                
-                // ... (CNC MODALLARI AYNEN KORUNDU) ...
-                showModal && React.createElement("div", {className: "fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 no-print"}, React.createElement("div", {className: "bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl text-center"}, (modalType === 'initial_ask' || modalType === 'finish_initial') && React.createElement("div", {}, React.createElement(IconAlert), React.createElement("h3", {className: "font-bold mb-2"}, "İlk Giriş"), React.createElement("p", {className: "mb-4"}, `Girdiğin ${modalData.current} sayısı Başlangıç mı, Üretim mi?`), React.createElement("button", {onClick: ()=>modalType==='finish_initial'?executeFinish(true):executeSave(true), className: "w-full py-3 bg-yellow-100 rounded-xl font-bold mb-2"}, "BAŞLANGIÇ (Üretim=0)"), React.createElement("button", {onClick: ()=>modalType==='finish_initial'?executeFinish(false):executeSave(false), className: "w-full py-3 bg-blue-600 text-white rounded-xl font-bold"}, "ÜRETİM")), (modalType === 'save' || modalType === 'finish') && React.createElement("div", {}, modalType === 'finish' ? React.createElement(IconFlag) : React.createElement(IconCheck), React.createElement("h3", {className: "font-bold mb-2"}, modalType === 'finish' ? "Partiyi Bitir" : "Kaydet"), React.createElement("div", {className: "text-left bg-slate-100 p-4 rounded-xl mb-4"}, React.createElement("div", {}, `Eski Sayaç: ${modalData.prev}`), React.createElement("div", {}, `Yeni Sayaç: ${modalData.current}`), React.createElement("div", {className:"text-green-600 font-bold"}, `Üretim: +${modalData.production}`)), React.createElement("div", {className: "flex gap-2"}, React.createElement("button", {onClick: ()=>setShowModal(false), className: "flex-1 py-3 bg-slate-200 rounded-xl"}, "İptal"), React.createElement("button", {onClick: ()=>modalType==='finish'?executeFinish(false):executeSave(false), className: `flex-1 py-3 text-white rounded-xl font-bold ${modalType==='finish'?'bg-red-600':'bg-blue-600'}`}, "ONAYLA"))), modalType === 'delete' && React.createElement("div", {}, React.createElement(IconTrash), React.createElement("h3", {className:"font-bold mb-2"}, "Sil"), React.createElement("p", {className:"mb-4"}, "Emin misin?"), React.createElement("button", {onClick: executeDelete, className: "w-full py-3 bg-red-600 text-white rounded-xl font-bold"}, "SİL")))),
-                showEditModal && editLog && React.createElement("div", {className: "fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 no-print"}, React.createElement("div", {className: "bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden"}, React.createElement("div", {className: "bg-slate-100 p-4 border-b flex justify-between items-center"}, React.createElement("h3", {className: "font-bold"}, "Kaydı Düzenle"), React.createElement("button", {onClick: () => setShowEditModal(false)}, React.createElement(IconClose))), React.createElement("div", {className: "p-6 space-y-4"}, React.createElement("div", {}, React.createElement("label", {className: "text-xs font-bold text-gray-400"}, "MAKİNE"), React.createElement("div", {className: "grid grid-cols-3 gap-2 mt-1"}, MACHINES.map(m => React.createElement("button", {key: m.id, onClick: () => setEditLog({...editLog, machineId: m.id}), className: `p-2 rounded-lg text-xs font-bold border ${editLog.machineId === m.id ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-gray-500 border-gray-200'}`}, m.id)))), React.createElement("div", {}, React.createElement("label", {className: "text-xs font-bold text-gray-400"}, "MAKİNE SAYACI (Total)"), React.createElement("input", {type: "number", value: editLog.totalCounter || '', onChange: (e) => setEditLog({...editLog, totalCounter: e.target.value}), className: "w-full p-3 border rounded-xl font-bold text-lg bg-yellow-50"})), React.createElement("div", {}, React.createElement("label", {className: "text-xs font-bold text-gray-400"}, "ÜRETİM (Fark)"), React.createElement("input", {type: "number", value: editLog.count, onChange: (e) => setEditLog({...editLog, count: e.target.value}), className: "w-full p-3 border rounded-xl font-bold text-lg"})), React.createElement("div", {}, React.createElement("label", {className: "text-xs font-bold text-gray-400"}, "TARİH"), React.createElement("input", {type: "date", value: editLog.date, onChange: (e) => setEditLog({...editLog, date: e.target.value}), className: "w-full p-3 border rounded-xl"})), React.createElement("div", {className: "flex items-center gap-3 p-3 bg-red-50 rounded-xl border border-red-100"}, React.createElement("input", {type: "checkbox", checked: editLog.type === 'finish', onChange: (e) => setEditLog({...editLog, type: e.target.checked ? 'finish' : null}), className: "w-5 h-5 accent-red-600"}), React.createElement("label", {className: "text-sm font-bold text-red-700"}, "Bu Bitiş Kaydıdır (Bayrak Ekle)"))), React.createElement("div", {className: "p-4 bg-slate-50 border-t flex gap-3"}, React.createElement("button", {onClick: ()=>setModalType('delete')||setShowModal(true), className: "flex-1 py-3 bg-red-100 text-red-600 rounded-xl font-bold"}, "SİL"), React.createElement("button", {onClick: handleEditSave, className: "flex-[2] py-3 bg-blue-600 text-white rounded-xl font-bold"}, "GÜNCELLE")))),
-                editingSale && React.createElement("div", {className: "fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 no-print"}, React.createElement("div", {className: "bg-white w-full max-w-sm rounded-2xl shadow-2xl p-5"}, React.createElement("div", {className: "flex justify-between items-center mb-4 border-b pb-2"}, React.createElement("h3", {className: "font-bold text-lg"}, "Satış Detayı"), React.createElement("button", {onClick: ()=>setEditingSale(null), className: "p-2 bg-slate-100 rounded-full"}, React.createElement(IconClose))), React.createElement("div", {className: "space-y-2 mb-6 max-h-60 overflow-y-auto"}, (editingSale.items || []).map((item, idx) => React.createElement("div", {key: idx, className: "flex justify-between text-sm border-b border-slate-50 py-1"}, React.createElement("span", {}, item.product + " (" + item.count + "x" + item.price + ")"), React.createElement("span", {className: "font-bold"}, item.total.toLocaleString('tr-TR') + "₺")))), React.createElement("div", {className: "flex gap-3"}, React.createElement("button", {onClick: ()=>handleDeleteSale(editingSale.id), className: "flex-1 py-3 bg-red-50 text-red-600 rounded-xl font-bold flex justify-center items-center gap-2"}, React.createElement(IconTrash), " SİL"), React.createElement("button", {onClick: ()=>handlePrint(editingSale), className: "flex-[2] py-3 bg-blue-600 text-white rounded-xl font-bold flex justify-center items-center gap-2"}, React.createElement(IconPrinter), " YAZDIR")))),
+            // EĞER FİŞ MODUNDAYSAK SADECE FİŞİ GÖSTER
+            if (viewMode === 'receipt') {
+                return React.createElement(ReceiptView);
+            }
 
-                // RAPOR MODAL (İSTATİSTİKLER BURAYA TAŞINDI)
-                showReportModal && React.createElement("div", {className: "fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 no-print"},
-                    React.createElement("div", {className: "bg-white w-full max-w-sm rounded-2xl shadow-2xl p-5 overflow-hidden flex flex-col max-h-[90vh]"},
-                        React.createElement("div", {className: "flex justify-between items-center mb-4 border-b pb-2"}, React.createElement("h3", {className: "font-bold text-lg"}, "Yönetim Raporu"), React.createElement("button", {onClick: ()=>setShowReportModal(false), className: "p-2 bg-slate-100 rounded-full"}, React.createElement(IconClose))),
-                        React.createElement("div", {className: "overflow-y-auto flex-1 pr-2 space-y-6"},
-                            // CİRO KARTLARI BURAYA GELDİ
-                            React.createElement("div", {className: "grid grid-cols-2 gap-3 mb-2"},
-                                React.createElement("div", {className: "bg-purple-50 p-3 rounded-xl border border-purple-100"}, 
-                                    React.createElement("div", {className: "text-[10px] font-bold text-slate-500"}, "BU AY CİRO"),
-                                    React.createElement("div", {className: "text-lg font-black text-purple-700"}, salesStats.monthlyTotal.toLocaleString('tr-TR', {maximumFractionDigits:0}) + "₺")
-                                ),
-                                React.createElement("div", {className: "bg-blue-50 p-3 rounded-xl border border-blue-100"}, 
-                                    React.createElement("div", {className: "text-[10px] font-bold text-slate-500"}, "BU YIL CİRO"),
-                                    React.createElement("div", {className: "text-lg font-black text-slate-700"}, salesStats.yearlyTotal.toLocaleString('tr-TR', {maximumFractionDigits:0}) + "₺")
-                                )
-                            ),
-                            React.createElement("div", {},
-                                React.createElement("h4", {className: "text-xs font-bold text-purple-700 uppercase mb-2"}, "En Çok Satan Ürünler (Bu Yıl)"),
-                                reportData.sortedProducts.length === 0 ? React.createElement("div", {className: "text-gray-400 text-sm"}, "Veri yok") : 
-                                reportData.sortedProducts.map(([name, qty], i) => React.createElement("div", {key: i, className: "flex justify-between text-sm py-1 border-b border-slate-50"}, React.createElement("span", {}, name), React.createElement("span", {className: "font-bold"}, qty + " Adet")))
-                            ),
-                            React.createElement("div", {},
-                                React.createElement("h4", {className: "text-xs font-bold text-purple-700 uppercase mb-2"}, "Müşteri Ciroları (Bu Yıl)"),
-                                reportData.sortedCustomers.length === 0 ? React.createElement("div", {className: "text-gray-400 text-sm"}, "Veri yok") : 
-                                reportData.sortedCustomers.map(([name, total], i) => React.createElement("div", {key: i, className: "flex justify-between text-sm py-1 border-b border-slate-50"}, React.createElement("span", {}, name), React.createElement("span", {className: "font-bold"}, total.toLocaleString('tr-TR') + " ₺")))
-                            )
-                        )
+            // NORMAL UYGULAMA GÖRÜNÜMÜ
+            return React.createElement("div", {className: "min-h-screen pb-20 font-sans safe-pt bg-slate-50 relative"},
+                
+                // AUTOCOMPLETE LISTELERİ
+                React.createElement("datalist", {id: "saleCustomerList"}, uniqueCustomers.map(c => React.createElement("option", {key: c, value: c}))),
+                React.createElement("datalist", {id: "saleProductList"}, uniqueSalesProducts.map(p => React.createElement("option", {key: p, value: p}))),
+                
+                // MODAL SİSTEMİ
+                showModal && React.createElement("div", {className: "fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 no-print"},
+                    React.createElement("div", {className: "bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl text-center animate-fade-in"},
+                         (modalType === 'delete_sale') && React.createElement("div", {}, 
+                             React.createElement(IconTrash, {width:48, height:48, className:"mx-auto mb-2 text-red-500"}), 
+                             React.createElement("h3", {className:"font-bold mb-2 text-red-600 text-lg uppercase"}, "Satış Silinsin mi?"), 
+                             React.createElement("p", {className:"mb-6 text-slate-500"}, "Bu işlem geri alınamaz."), 
+                             React.createElement("div", {className:"flex gap-3"},
+                                React.createElement("button", {onClick: ()=>setShowModal(false), className: "flex-1 py-3 bg-slate-100 rounded-xl font-bold"}, "VAZGEÇ"),
+                                React.createElement("button", {onClick: executeDeleteSale, className: "flex-1 py-3 bg-red-600 text-white rounded-xl font-bold shadow-lg shadow-red-100"}, "EVET, SİL")
+                             )
+                         ),
+                         (modalType === 'initial_ask' || modalType === 'finish_initial') && React.createElement("div", {}, React.createElement(IconAlert), React.createElement("h3", {className: "font-bold mb-2"}, "İlk Giriş"), React.createElement("p", {className: "mb-4"}, `Girdiğin ${modalData.current} sayısı Başlangıç mı, Üretim mi?`), React.createElement("button", {onClick: ()=>modalType==='finish_initial'?executeFinish(true):executeSave(true), className: "w-full py-3 bg-yellow-100 rounded-xl font-bold mb-2"}, "BAŞLANGIÇ (Üretim=0)"), React.createElement("button", {onClick: ()=>modalType==='finish_initial'?executeFinish(false):executeSave(false), className: "w-full py-3 bg-blue-600 text-white rounded-xl font-bold"}, "ÜRETİM")),
+                         (modalType === 'save' || modalType === 'finish') && React.createElement("div", {}, modalType === 'finish' ? React.createElement(IconFlag) : React.createElement(IconCheck), React.createElement("h3", {className: "font-bold mb-2"}, modalType === 'finish' ? "Partiyi Bitir" : "Kaydet"), React.createElement("div", {className: "text-left bg-slate-100 p-4 rounded-xl mb-4"}, React.createElement("div", {}, `Eski Sayaç: ${modalData.prev}`), React.createElement("div", {}, `Yeni Sayaç: ${modalData.current}`), React.createElement("div", {className:"text-green-600 font-bold"}, `Üretim: +${modalData.production}`)), React.createElement("div", {className: "flex gap-2"}, React.createElement("button", {onClick: ()=>setShowModal(false), className: "flex-1 py-3 bg-slate-200 rounded-xl"}, "İptal"), React.createElement("button", {onClick: ()=>modalType==='finish'?executeFinish(false):executeSave(false), className: `flex-1 py-3 text-white rounded-xl font-bold ${modalType==='finish'?'bg-red-600':'bg-blue-600'}`}, "ONAYLA"))),
+                         (modalType === 'delete' || modalType === 'delete_log') && React.createElement("div", {}, React.createElement(IconTrash), React.createElement("h3", {className:"font-bold mb-2 text-red-600"}, "Kayıt Silinsin mi?"), React.createElement("p", {className:"mb-4"}, "Emin misin?"), React.createElement("button", {onClick: executeDelete, className: "w-full py-3 bg-red-600 text-white rounded-xl font-bold"}, "SİL"))
                     )
                 ),
+                
+                showEditModal && editLog && React.createElement("div", {className: "fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 no-print"}, React.createElement("div", {className: "bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden"}, React.createElement("div", {className: "bg-slate-100 p-4 border-b flex justify-between items-center"}, React.createElement("h3", {className: "font-bold"}, "Kaydı Düzenle"), React.createElement("button", {onClick: () => setShowEditModal(false)}, React.createElement(IconClose))), React.createElement("div", {className: "p-6 space-y-4"}, React.createElement("div", {}, React.createElement("label", {className: "text-xs font-bold text-gray-400"}, "MAKİNE"), React.createElement("div", {className: "grid grid-cols-3 gap-2 mt-1"}, MACHINES.map(m => React.createElement("button", {key: m.id, onClick: () => setEditLog({...editLog, machineId: m.id}), className: `p-2 rounded-lg text-xs font-bold border ${editLog.machineId === m.id ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-gray-500 border-gray-200'}`}, m.id)))), React.createElement("div", {}, React.createElement("label", {className: "text-xs font-bold text-gray-400"}, "MAKİNE SAYACI (Total)"), React.createElement("input", {type: "number", value: editLog.totalCounter || '', onChange: (e) => setEditLog({...editLog, totalCounter: e.target.value}), className: "w-full p-3 border rounded-xl font-bold text-lg bg-yellow-50"})), React.createElement("div", {}, React.createElement("label", {className: "text-xs font-bold text-gray-400"}, "ÜRETİM (Fark)"), React.createElement("input", {type: "number", value: editLog.count, onChange: (e) => setEditLog({...editLog, count: e.target.value}), className: "w-full p-3 border rounded-xl font-bold text-lg"})), React.createElement("div", {}, React.createElement("label", {className: "text-xs font-bold text-gray-400"}, "TARİH"), React.createElement("input", {type: "date", value: editLog.date, onChange: (e) => setEditLog({...editLog, date: e.target.value}), className: "w-full p-3 border rounded-xl"})), React.createElement("div", {className: "flex items-center gap-3 p-3 bg-red-50 rounded-xl border border-red-100"}, React.createElement("input", {type: "checkbox", checked: editLog.type === 'finish', onChange: (e) => setEditLog({...editLog, type: e.target.checked ? 'finish' : null}), className: "w-5 h-5 accent-red-600"}), React.createElement("label", {className: "text-sm font-bold text-red-700"}, "Bu Bitiş Kaydıdır (Bayrak Ekle)"))), React.createElement("div", {className: "p-4 bg-slate-50 border-t flex gap-3"}, React.createElement("button", {onClick: ()=>setModalType('delete')||setShowModal(true), className: "flex-1 py-3 bg-red-100 text-red-600 rounded-xl font-bold"}, "SİL"), React.createElement("button", {onClick: handleEditSave, className: "flex-[2] py-3 bg-blue-600 text-white rounded-xl font-bold"}, "GÜNCELLE")))),
 
-                // HEADER (BAŞLIK GÜNCELLENDİ)
+                // HEADER
                 React.createElement("div", {className: "bg-slate-900 text-white p-4 flex justify-between items-center sticky top-0 z-10 no-print"},
                     React.createElement("h1", {className: "font-bold flex gap-2 items-center"}, React.createElement("img", {src: LOGO_LINKI, className: "w-8 h-8 rounded-full bg-white"}), " Akdeniz Takip "),
                     React.createElement("div", {className: "bg-slate-800 rounded p-1 flex gap-1"},
@@ -325,7 +309,8 @@
                 ),
 
                 React.createElement("main", {className: "max-w-md mx-auto p-4 space-y-4 no-print"},
-                    // CNC SEKME İÇERİKLERİ ...
+                    
+                    // --- CNC SEKME (EKSİKSİZ) ---
                     activeTab === 'entry' && React.createElement("div", {className: "space-y-6"},
                          React.createElement("div", {className: "grid grid-cols-3 gap-2"}, MACHINES.map(m => React.createElement("button", {key: m.id, onClick: ()=>setActiveMachine(m.id), className: `py-3 rounded-xl border-b-4 ${activeMachine===m.id ? m.color+' text-white' : 'bg-white'}`}, m.id))),
                          React.createElement("div", {className: "bg-white p-5 rounded-2xl shadow-sm border space-y-4"},
@@ -342,26 +327,26 @@
                         logs.filter(l=>l.date===selectedHistoryDate).map(l => { const mColor = MACHINES.find(m => m.id === l.machineId)?.color || 'bg-gray-500'; return React.createElement("div", {key: l.id, onClick: ()=>{setEditLog(l); setShowEditModal(true);}, className: `bg-white p-3 rounded-xl border mb-2 flex justify-between items-center cursor-pointer active:bg-slate-50 ${l.type==='finish'?'border-red-300 bg-red-50':''}`}, React.createElement("div", {}, React.createElement("span", {className: `text-xs font-bold text-white px-2 py-1 rounded mr-2 ${mColor}`}, l.machineId), React.createElement("span", {className: "font-bold"}, l.partName)), React.createElement("div", {className: "text-right"}, React.createElement("div", {className: "font-bold text-lg flex items-center justify-end gap-2"}, l.count, l.type === 'finish' && React.createElement("span", {className:"text-[10px] bg-red-600 text-white px-1 rounded flex items-center gap-1"}, "BİTTİ", React.createElement(IconFlag, {className:"w-3 h-3 text-white"}))), React.createElement("div", {className: "text-sm font-bold text-gray-500"}, "Toplam (Sayaç): " + (l.totalCounter || '-')))); })
                     ),
 
-                    // --- 3. SATIŞ SEKME (GÜNCELLENMİŞ) ---
+                    // --- SATIŞ SEKME (EKSİKSİZ) ---
                     activeTab === 'sales' && React.createElement("div", {className: "space-y-4"},
                         
-                        // YENİ SATIŞ BUTONU + RAPOR BUTONU
+                        // ÜST PANEL
                         React.createElement("div", {className: "flex gap-2"},
-                            React.createElement("button", {onClick: ()=>setIsSalesFormOpen(!isSalesFormOpen), className: "flex-1 py-3 bg-purple-600 text-white font-bold rounded-xl shadow-lg shadow-purple-200 active:scale-95 transition"}, isSalesFormOpen ? "GİRİŞİ KAPAT" : "+ YENİ SATIŞ GİRİŞİ"),
-                            React.createElement("button", {onClick: ()=>setShowReportModal(true), className: "w-12 bg-white text-purple-600 border border-purple-100 rounded-xl flex items-center justify-center font-bold shadow-sm"}, React.createElement(IconChart))
+                            React.createElement("button", {onClick: ()=> setIsSalesFormOpen(!isSalesFormOpen), className: `flex-1 py-3 font-bold rounded-xl shadow-lg transition active:scale-95 ${isSalesFormOpen ? 'bg-slate-200' : 'bg-purple-600 text-white shadow-purple-200'}`}, 
+                                isSalesFormOpen ? "KAPAT" : (editingSaleId ? "DÜZENLEMEYİ KAPAT" : "+ YENİ SATIŞ")
+                            ),
+                            React.createElement("button", {onClick: ()=>setShowReportModal(true), className: "w-12 bg-white text-purple-600 border border-purple-100 rounded-xl flex items-center justify-center shadow-sm"}, React.createElement(IconChart))
                         ),
 
-                        // YENİ SATIŞ KARTI (GİZLENEBİLİR)
+                        // SATIŞ FORMU
                         isSalesFormOpen && React.createElement("div", {className: "bg-white p-4 rounded-2xl shadow-sm border border-purple-100 space-y-3 animate-fade-in"},
-                            React.createElement("h2", {className: "text-xs font-bold text-purple-800 border-b border-purple-100 pb-1 mb-2"}, "SİPARİŞ DETAYLARI"),
                             React.createElement("div", {className: "flex gap-2"},
                                 React.createElement("input", {type: "date", value: salesDate, onChange: e=>setSalesDate(e.target.value), className: "w-1/3 p-2 border rounded-lg font-bold text-sm"}),
-                                React.createElement("input", {list: "customerList", value: customer, onChange: e=>setCustomer(e.target.value), placeholder: "Müşteri Adı", className: "w-2/3 p-2 border rounded-lg font-bold uppercase text-sm"}),
-                                React.createElement("datalist", {id: "customerList"}, uniqueCustomers.map(c => React.createElement("option", {key: c, value: c})))
+                                React.createElement("input", {list: "saleCustomerList", value: customer, onChange: e=>setCustomer(e.target.value), placeholder: "Müşteri Adı", className: "w-2/3 p-2 border rounded-lg font-bold uppercase text-sm"})
                             ),
                             React.createElement("div", {className: "bg-purple-50 p-3 rounded-xl border border-purple-100 space-y-2"},
-                                React.createElement("input", {list: "salesProductList", value: product, onChange: e=>setProduct(e.target.value), placeholder: "Ürün Adı", className: "w-full p-2 border rounded-lg font-bold uppercase text-sm"}),
-                                React.createElement("datalist", {id: "salesProductList"}, uniqueSalesProducts.map(p => React.createElement("option", {key: p, value: p}))),
+                                React.createElement("div", {className: "flex gap-1 mb-1"}, Object.entries(CURRENCIES).map(([k,v]) => React.createElement("button", {key: k, onClick: ()=>setCurrency(k), className: `flex-1 py-1 text-[10px] font-bold rounded border ${currency===k?'bg-purple-600 text-white':'bg-white text-slate-400'}`}, v.label))),
+                                React.createElement("input", {list: "saleProductList", value: product, onChange: e=>setProduct(e.target.value), placeholder: "Ürün Adı", className: "w-full p-2 border rounded-lg font-bold uppercase text-sm"}),
                                 React.createElement("div", {className: "flex gap-2"},
                                     React.createElement("input", {type: "number", value: count, onChange: e=>setCount(e.target.value), placeholder: "Adet", className: "w-1/3 p-2 border rounded-lg text-center font-bold text-sm"}),
                                     React.createElement("input", {type: "number", value: price, onChange: e=>setPrice(e.target.value), placeholder: "Fiyat", className: "w-1/3 p-2 border rounded-lg text-center font-bold text-sm"}),
@@ -371,47 +356,83 @@
                                     React.createElement("input", {type: "checkbox", checked: taxIncluded, onChange: e=>setTaxIncluded(e.target.checked), className: "w-3 h-3 accent-purple-600"}), "KDV (%20) Ekle"
                                 )
                             ),
-                            cart.length > 0 && React.createElement("div", {},
-                                cart.map(item => React.createElement("div", {key: item.id, className: "flex justify-between text-xs border-b border-slate-100 py-1"},
-                                    React.createElement("span", {}, item.product + " (" + item.count + "x" + item.price + ")"),
-                                    React.createElement("span", {className: "font-bold"}, item.total.toLocaleString('tr-TR') + "₺")
-                                )),
-                                React.createElement("div", {className: "flex justify-between items-center mt-3 pt-2 border-t border-purple-200"},
-                                    React.createElement("span", {className: "font-bold text-purple-900"}, "TOPLAM"),
-                                    React.createElement("span", {className: "text-xl font-bold text-purple-700"}, cart.reduce((a,i)=>a+i.total,0).toLocaleString('tr-TR')+"₺")
+                            cart.length > 0 && React.createElement("div", {className: "space-y-2 pt-2"},
+                                cart.map(item => React.createElement("div", {key: item.id, className: "flex justify-between text-xs border-b pb-2"}, React.createElement("div", {}, React.createElement("div",{className:"font-bold"},item.product), React.createElement("div",{className:"text-slate-400"},`${item.count} x ${item.price} ${CURRENCIES[item.currency].symbol}`)), React.createElement("div", {className:"flex gap-2 items-center"}, React.createElement("span",{className:"font-bold"},formatMoney(item.total, item.currency)), React.createElement("button", {onClick:()=>setCart(cart.filter(c=>c.id!==item.id))}, React.createElement(IconClose,{width:14}))))),
+                                
+                                // SEPET ALTI DETAYLI TOPLAM (GERİ GELDİ)
+                                React.createElement("div", {className: "bg-slate-50 p-3 rounded-lg mt-3 text-sm space-y-1 text-right"},
+                                    React.createElement("div", {className: "flex justify-between text-slate-500"}, React.createElement("span", {}, "Ara Toplam"), React.createElement("span", {}, formatMoney(cartTotals.subTotal, cartTotals.currency))),
+                                    React.createElement("div", {className: "flex justify-between text-slate-500"}, React.createElement("span", {}, "KDV Toplam"), React.createElement("span", {}, formatMoney(cartTotals.kdvTotal, cartTotals.currency))),
+                                    React.createElement("div", {className: "flex justify-between font-black text-lg text-purple-700 border-t pt-1"}, React.createElement("span", {}, "GENEL TOPLAM"), React.createElement("span", {}, formatMoney(cartTotals.grandTotal, cartTotals.currency)))
                                 ),
-                                React.createElement("button", {onClick: handleSaveSale, className: "w-full mt-3 py-3 bg-purple-700 text-white font-bold rounded-xl hover:bg-purple-800"}, "SATIŞI TAMAMLA")
+                                
+                                React.createElement("button", {onClick: handleSaveSale, className: "w-full mt-3 py-3 bg-purple-700 text-white font-bold rounded-xl shadow-lg"}, "KAYDET")
                             )
                         ),
 
-                        // ARAMA VE LİSTE (GÜNCELLENDİ: ÇİFT FİLTRE)
-                        React.createElement("div", {className: "pt-2"},
-                            React.createElement("div", {className: "flex gap-2 mb-4"},
-                                React.createElement("div", {className: "relative flex-1"},
-                                    React.createElement("input", {type: "text", value: searchTerm, onChange: e=>setSearchTerm(e.target.value), placeholder: "Müşteri Ara...", className: "w-full p-3 pl-9 border border-slate-300 rounded-xl shadow-sm focus:ring-2 focus:ring-purple-500 outline-none font-bold text-sm"}),
-                                    React.createElement("div", {className: "absolute left-2.5 top-3.5"}, React.createElement(IconSearch))
-                                ),
-                                React.createElement("div", {className: "relative flex-1"},
-                                    React.createElement("input", {type: "text", value: productSearchTerm, onChange: e=>setProductSearchTerm(e.target.value), placeholder: "Ürün Ara...", className: "w-full p-3 pl-9 border border-slate-300 rounded-xl shadow-sm focus:ring-2 focus:ring-purple-500 outline-none font-bold text-sm"}),
-                                    React.createElement("div", {className: "absolute left-2.5 top-3.5"}, React.createElement(IconSearch))
+                        // ARŞİV VE ARAMA PANELİ
+                        React.createElement("div", {className: "bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-3"},
+                            React.createElement("div", {className: "flex items-center justify-between border-b pb-2 mb-2"},
+                                React.createElement("h3", {className: "text-xs font-black text-slate-400 uppercase flex items-center gap-1"}, React.createElement(IconCalendar, {width:16}), "SATIŞ ARŞİVİ"),
+                                React.createElement("label", {className: "text-[10px] font-bold text-purple-600 flex items-center gap-1 cursor-pointer"}, 
+                                    React.createElement("input", {type: "checkbox", checked: showAllTimeSales, onChange: e=>setShowAllTimeSales(e.target.checked), className: "accent-purple-600"}), "TÜM ZAMANLAR"
                                 )
                             ),
-                            React.createElement("h2", {className: "font-bold text-slate-400 text-xs mb-3 px-1 uppercase tracking-wide"}, (searchTerm || productSearchTerm) ? "ARAMA SONUÇLARI" : "SON HAREKETLER"),
-                            React.createElement("div", {className: "space-y-3"},
-                                filteredSales.map(sale => 
-                                    React.createElement("div", {key: sale.id, onClick: ()=>setEditingSale(sale), className: "bg-white p-4 rounded-xl border border-slate-200 shadow-sm active:bg-slate-50 cursor-pointer relative"},
-                                        React.createElement("div", {className: "flex justify-between items-start"},
-                                            React.createElement("div", {},
-                                                React.createElement("div", {className: "font-bold text-slate-800 text-lg flex items-center gap-2"}, sale.customer),
-                                                React.createElement("div", {className: "text-xs text-gray-400"}, new Date(sale.date).toLocaleDateString('tr-TR') + " • " + (sale.items?.length || 0) + " Kalem")
-                                            ),
-                                            React.createElement("div", {className: "text-right"},
-                                                React.createElement("div", {className: "font-bold text-purple-600 text-lg"}, sale.grandTotal.toLocaleString('tr-TR', {minimumFractionDigits:2}) + "₺"),
-                                                React.createElement("button", {onClick: (e)=> { e.stopPropagation(); handlePrint(sale); }, className: "bg-blue-50 text-blue-600 p-1.5 rounded-lg mt-1 inline-flex items-center gap-1 text-[10px] font-bold border border-blue-100"}, React.createElement(IconPrinter), "YAZDIR")
-                                            )
+                            !showAllTimeSales && React.createElement("div", {className: "flex gap-2 items-center"},
+                                React.createElement("span", {className: "text-xs font-bold text-slate-500"}, "AY SEÇ:"),
+                                React.createElement("input", {type: "month", value: selectedSalesMonth, onChange: e=>setSelectedSalesMonth(e.target.value), className: "flex-1 p-2 bg-slate-50 border rounded-lg font-bold text-sm outline-none"})
+                            ),
+                            React.createElement("div", {className: "flex gap-2"},
+                                React.createElement("div", {className: "relative flex-1"},
+                                    React.createElement("input", {value: searchTerm, onChange: e=>setSearchTerm(e.target.value), placeholder: "Müşteri Ara...", className: "w-full p-2.5 pl-8 border rounded-xl text-xs font-bold outline-none"}),
+                                    React.createElement("div", {className: "absolute left-2.5 top-3"}, React.createElement(IconSearch, {width:16}))
+                                ),
+                                React.createElement("div", {className: "relative flex-1"},
+                                    React.createElement("input", {value: productSearchTerm, onChange: e=>setProductSearchTerm(e.target.value), placeholder: "Ürün Ara...", className: "w-full p-2.5 pl-8 border rounded-xl text-xs font-bold outline-none"}),
+                                    React.createElement("div", {className: "absolute left-2.5 top-3"}, React.createElement(IconSearch, {width:16}))
+                                )
+                            )
+                        ),
+
+                        // LİSTELEME
+                        React.createElement("div", {className: "space-y-2"},
+                            filteredSales.length === 0 ? React.createElement("div", {className: "text-center p-10 text-slate-400 text-sm italic"}, "Bu kriterlere uygun satış bulunamadı.") :
+                            filteredSales.map(sale => React.createElement("div", {key: sale.id, className: "bg-white p-4 rounded-xl border border-slate-200 shadow-sm relative animate-fade-in"},
+                                React.createElement("div", {className: "flex justify-between items-start"},
+                                    React.createElement("div", {className:"flex-1", onClick: ()=>openReceiptMode(sale)},
+                                        React.createElement("div", {className: "font-bold text-slate-800 text-lg"}, sale.customer),
+                                        React.createElement("div", {className: "text-[10px] text-gray-400"}, new Date(sale.date).toLocaleDateString('tr-TR') + " • " + (sale.items?.length || 0) + " Kalem")
+                                    ),
+                                    React.createElement("div", {className: "text-right flex flex-col items-end gap-1"},
+                                        React.createElement("div", {className: "font-black text-purple-700"}, formatMoney(sale.grandTotal, sale.currency || 'TRY')),
+                                        React.createElement("div", {className: "flex gap-1"},
+                                            React.createElement("button", {onClick: ()=>startEditSale(sale), className: "bg-blue-50 text-blue-600 p-1.5 rounded border border-blue-100"}, React.createElement(IconEdit, {width:16})),
+                                            React.createElement("button", {onClick: (e)=> { e.stopPropagation(); openReceiptMode(sale); }, className: "bg-slate-50 text-slate-600 p-1.5 rounded border"}, React.createElement(IconEye, {width:16})),
+                                            React.createElement("button", {onClick: (e)=> askDeleteSale(sale.id, e), className: "bg-red-50 text-red-600 p-1.5 rounded border border-red-100"}, React.createElement(IconTrash, {width:16}))
                                         )
                                     )
                                 )
+                            ))
+                        )
+                    )
+                ),
+
+                // RAPOR MODAL
+                showReportModal && React.createElement("div", {className: "fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 no-print"},
+                    React.createElement("div", {className: "bg-white w-full max-w-sm rounded-2xl shadow-2xl p-5 overflow-hidden flex flex-col max-h-[90vh]"},
+                        React.createElement("div", {className: "flex justify-between items-center mb-4 border-b pb-2"}, React.createElement("h3", {className: "font-bold text-lg"}, "Yönetim Raporu"), React.createElement("button", {onClick: ()=>setShowReportModal(false), className: "p-2 bg-slate-100 rounded-full"}, React.createElement(IconClose))),
+                        React.createElement("div", {className: "overflow-y-auto flex-1 pr-2 space-y-6"},
+                            React.createElement("div", {className: "grid grid-cols-2 gap-3 mb-2"},
+                                React.createElement("div", {className: "bg-purple-50 p-3 rounded-xl border border-purple-100"}, React.createElement("div", {className: "text-[10px] font-bold text-slate-500"}, "BU AY CİRO"), React.createElement("div", {className: "text-lg font-black text-purple-700"}, salesStats.monthlyTotal.toLocaleString('tr-TR', {maximumFractionDigits:0}) + "₺")),
+                                React.createElement("div", {className: "bg-blue-50 p-3 rounded-xl border border-blue-100"}, React.createElement("div", {className: "text-[10px] font-bold text-slate-500"}, "BU YIL CİRO"), React.createElement("div", {className: "text-lg font-black text-slate-700"}, salesStats.yearlyTotal.toLocaleString('tr-TR', {maximumFractionDigits:0}) + "₺"))
+                            ),
+                            React.createElement("div", {},
+                                React.createElement("h4", {className: "text-xs font-bold text-purple-700 uppercase mb-2"}, "En Çok Satan Ürünler"),
+                                reportData.sortedProducts.length === 0 ? React.createElement("div", {className: "text-gray-400 text-sm"}, "Veri yok") : reportData.sortedProducts.map(([name, qty], i) => React.createElement("div", {key: i, className: "flex justify-between text-sm py-1 border-b border-slate-50"}, React.createElement("span", {}, name), React.createElement("span", {className: "font-bold"}, qty + " Adet")))
+                            ),
+                            React.createElement("div", {},
+                                React.createElement("h4", {className: "text-xs font-bold text-purple-700 uppercase mb-2"}, "Müşteri Ciroları"),
+                                reportData.sortedCustomers.length === 0 ? React.createElement("div", {className: "text-gray-400 text-sm"}, "Veri yok") : reportData.sortedCustomers.map(([name, total], i) => React.createElement("div", {key: i, className: "flex justify-between text-sm py-1 border-b border-slate-50"}, React.createElement("span", {}, name), React.createElement("span", {className: "font-bold"}, total.toLocaleString('tr-TR') + " ₺")))
                             )
                         )
                     )
@@ -424,3 +445,4 @@
     </script>
 </body>
 </html>
+
