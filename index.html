@@ -43,7 +43,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, doc, updateDoc, deleteDoc, limit, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         const { useState, useEffect, useMemo } = React;
         const { flushSync } = ReactDOM;
@@ -74,7 +74,6 @@
             EUR: { label: 'EUR', symbol: '€' }
         };
 
-        // YEREL TARİH ALMA (Timezone Hatasını Çözer)
         const getTodayDate = () => {
             const d = new Date();
             const year = d.getFullYear();
@@ -83,7 +82,6 @@
             return `${year}-${month}-${day}`;
         };
 
-        // Türkçe karakterleri İngilizce karakterlere çeviren yardımcı fonksiyon
         const trToEn = (str) => {
             if (!str) return "";
             return str
@@ -130,13 +128,20 @@
             const [activeMachine, setActiveMachine] = useState(MACHINES[0].id);
             const [partName, setPartName] = useState('');
             const [inputCounter, setInputCounter] = useState('');
-            
-            // DÜZELTME: Başlangıç tarihini yerel saat ile al
             const [selectedHistoryDate, setSelectedHistoryDate] = useState(getTodayDate());
-            
             const [editLog, setEditLog] = useState(null);
             const [showEditModal, setShowEditModal] = useState(false);
-            const [logs, setLogs] = useState([]);
+            
+            // GEÇMİŞ MODLARI
+            const [historyMode, setHistoryMode] = useState('date');
+            const [historySearchTerm, setHistorySearchTerm] = useState('');
+
+            // OPTİMİZASYON VE LİSTELER
+            const [recentLogs, setRecentLogs] = useState([]); 
+            const [historyLogs, setHistoryLogs] = useState([]); 
+            const [partHistoryLogs, setPartHistoryLogs] = useState([]); 
+            const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+            
             const [batchResets, setBatchResets] = useState([]);
             
             // STATE - MODAL (ORTAK)
@@ -145,7 +150,7 @@
             const [modalData, setModalData] = useState({});
 
             // STATE - SATIŞ
-            const [salesDate, setSalesDate] = useState(getTodayDate()); // DÜZELTME: Yerel tarih
+            const [salesDate, setSalesDate] = useState(getTodayDate());
             const [customer, setCustomer] = useState('');
             const [product, setProduct] = useState('');
             const [count, setCount] = useState('');
@@ -162,19 +167,62 @@
             const [printSale, setPrintSale] = useState(null);
             const [isSalesFormOpen, setIsSalesFormOpen] = useState(false);
             const [showReportModal, setShowReportModal] = useState(false);
-            
-            // STATE: WhatsApp Linki
-            const [whatsappUrl, setWhatsappUrl] = useState(null);
 
+            // 1. ANA VERİ DİNLEYİCİSİ
             useEffect(() => {
                 if (!db) return;
-                const unsubLogs = onSnapshot(query(collection(db, "logs"), orderBy("timestamp", "desc")), (s) => { setLogs(s.docs.map(d => ({ id: d.id, ...d.data() }))); setIsLoading(false); });
-                const unsubResets = onSnapshot(query(collection(db, "resets"), orderBy("resetDate", "desc")), (s) => setBatchResets(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-                const unsubSales = onSnapshot(query(collection(db, "sales_demo"), orderBy("timestamp", "desc")), (s) => setSales(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+                
+                const qRecent = query(collection(db, "logs"), orderBy("timestamp", "desc"), limit(150));
+                
+                const unsubLogs = onSnapshot(qRecent, (s) => { 
+                    setRecentLogs(s.docs.map(d => ({ id: d.id, ...d.data() }))); 
+                    setIsLoading(false); 
+                });
+
+                const unsubResets = onSnapshot(query(collection(db, "resets"), orderBy("resetDate", "desc"), limit(50)), (s) => setBatchResets(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+                const unsubSales = onSnapshot(query(collection(db, "sales_demo"), orderBy("timestamp", "desc"), limit(100)), (s) => setSales(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+                
                 return () => { unsubLogs(); unsubResets(); unsubSales(); };
             }, []);
 
-            // GÜVENLİ PARA FORMATLAMA (Çökme Önleyici)
+            // 2. GEÇMİŞ: TARİH BAZLI DİNLEYİCİ
+            useEffect(() => {
+                if (!db || !selectedHistoryDate || historyMode !== 'date') return;
+                
+                setIsHistoryLoading(true);
+                const qHistory = query(collection(db, "logs"), where("date", "==", selectedHistoryDate), orderBy("timestamp", "desc"));
+                
+                const unsubHistory = onSnapshot(qHistory, (s) => {
+                    setHistoryLogs(s.docs.map(d => ({ id: d.id, ...d.data() })));
+                    setIsHistoryLoading(false);
+                });
+
+                return () => unsubHistory();
+            }, [selectedHistoryDate, historyMode]);
+
+            // 3. GEÇMİŞ: PARÇA BAZLI DİNLEYİCİ
+            useEffect(() => {
+                if (!db || historyMode !== 'part' || !historySearchTerm) {
+                    setPartHistoryLogs([]);
+                    return;
+                }
+                
+                setIsHistoryLoading(true);
+                const qPart = query(
+                    collection(db, "logs"), 
+                    where("partName", "==", historySearchTerm.toUpperCase().trim()), 
+                    orderBy("timestamp", "desc"), 
+                    limit(50)
+                );
+                
+                const unsubPart = onSnapshot(qPart, (s) => {
+                    setPartHistoryLogs(s.docs.map(d => ({ id: d.id, ...d.data() })));
+                    setIsHistoryLoading(false);
+                });
+
+                return () => unsubPart();
+            }, [historySearchTerm, historyMode]);
+
             const formatMoney = (val, cur) => {
                 const currencyInfo = CURRENCIES[cur] || CURRENCIES.TRY; 
                 const symbol = currencyInfo.symbol;
@@ -194,13 +242,53 @@
                 return { subTotal, kdvTotal, grandTotal, currency: activeCurrency };
             }, [cart]);
 
-            const uniqueProducts = useMemo(() => Array.from(new Set(logs.map(l => l.partName))).sort(), [logs]);
-            const latestReset = useMemo(() => { if(!partName) return null; const pName = partName.toUpperCase().trim(); const pResets = batchResets.filter(r => r.partName === pName); return pResets.length ? pResets[0] : null; }, [batchResets, partName]);
-            const lastRecord = useMemo(() => { if(!partName) return null; const pName = partName.toUpperCase().trim(); let relevantLogs = logs.filter(l => l.partName === pName && l.machineId === activeMachine && l.totalCounter !== undefined); if (latestReset) relevantLogs = relevantLogs.filter(l => new Date(l.timestamp) > new Date(latestReset.resetDate)); return relevantLogs.length > 0 ? relevantLogs[0] : null; }, [logs, latestReset, partName, activeMachine]);
+            // GÜNCELLENDİ: Parça listesi hem son kayıtlardan hem de eski reset kayıtlarından gelir
+            const uniqueProducts = useMemo(() => {
+                const fromLogs = recentLogs.map(l => l.partName);
+                const fromResets = batchResets.map(r => r.partName);
+                return Array.from(new Set([...fromLogs, ...fromResets])).sort();
+            }, [recentLogs, batchResets]);
+            
+            const latestReset = useMemo(() => { 
+                if(!partName) return null; 
+                const pName = partName.toUpperCase().trim(); 
+                const pResets = batchResets.filter(r => r.partName === pName); 
+                return pResets.length ? pResets[0] : null; 
+            }, [batchResets, partName]);
+
+            const lastRecord = useMemo(() => { 
+                if(!partName) return null; 
+                const pName = partName.toUpperCase().trim(); 
+                let relevantLogs = recentLogs.filter(l => l.partName === pName && l.machineId === activeMachine && l.totalCounter !== undefined); 
+                if (latestReset) relevantLogs = relevantLogs.filter(l => new Date(l.timestamp) > new Date(latestReset.resetDate)); 
+                return relevantLogs.length > 0 ? relevantLogs[0] : null; 
+            }, [recentLogs, latestReset, partName, activeMachine]);
+
             const lastCounterValue = lastRecord ? lastRecord.totalCounter : 0;
             const isFirstRecordOfBatch = !lastRecord;
-            const stats = useMemo(() => { if (!partName) return { daily: 0, batch: 0, yearly: 0 }; const pNameUpper = partName.toUpperCase().trim(); const now = new Date(); const todayStr = getTodayDate(); const resets = batchResets.filter(r => r.partName === pNameUpper).sort((a,b) => new Date(b.resetDate) - new Date(a.resetDate)); const lastReset = resets.length ? new Date(resets[0].resetDate) : new Date(0); let s = { daily: 0, batch: 0, yearly: 0 }; logs.forEach(l => { if (l.partName === pNameUpper) { if (new Date(l.date).getFullYear() === now.getFullYear()) s.yearly += l.count; if (l.date === todayStr) s.daily += l.count; if (new Date(l.timestamp) > lastReset) s.batch += l.count; } }); return s; }, [logs, batchResets, partName]);
-            const yesterdaySummary = useMemo(() => { const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1); const yesterdayStr = yesterday.toISOString().split('T')[0]; const filteredLogs = logs.filter(l => l.date === yesterdayStr); const summary = filteredLogs.reduce((acc, log) => { const key = `${log.machineId}-${log.partName}`; if (!acc[key]) acc[key] = { machineId: log.machineId, partName: log.partName, totalProduction: 0, lastCounter: 0, timestamp: log.timestamp, isFinished: false, machineColor: MACHINES.find(m => m.id === log.machineId)?.color || 'bg-gray-500' }; acc[key].totalProduction += log.count; if (new Date(log.timestamp) >= new Date(acc[key].timestamp)) { acc[key].lastCounter = log.totalCounter; acc[key].timestamp = log.timestamp; if (log.type === 'finish') acc[key].isFinished = true; } return acc; }, {}); return Object.values(summary); }, [logs, MACHINES]);
+
+            const stats = useMemo(() => { 
+                if (!partName) return { daily: 0, batch: 0, yearly: 0 }; 
+                const pNameUpper = partName.toUpperCase().trim(); 
+                const todayStr = getTodayDate(); 
+                const resets = batchResets.filter(r => r.partName === pNameUpper).sort((a,b) => new Date(b.resetDate) - new Date(a.resetDate)); 
+                const lastReset = resets.length ? new Date(resets[0].resetDate) : new Date(0); 
+                let s = { daily: 0, batch: 0 }; 
+                recentLogs.forEach(l => { 
+                    if (l.partName === pNameUpper) { 
+                        if (l.date === todayStr) s.daily += l.count; 
+                        if (new Date(l.timestamp) > lastReset) s.batch += l.count; 
+                    } 
+                }); 
+                return s; 
+            }, [recentLogs, batchResets, partName]);
+
+            const yesterdaySummary = useMemo(() => { 
+                const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1); 
+                const yesterdayStr = yesterday.toISOString().split('T')[0]; 
+                const filteredLogs = recentLogs.filter(l => l.date === yesterdayStr); 
+                const summary = filteredLogs.reduce((acc, log) => { const key = `${log.machineId}-${log.partName}`; if (!acc[key]) acc[key] = { machineId: log.machineId, partName: log.partName, totalProduction: 0, lastCounter: 0, timestamp: log.timestamp, isFinished: false, machineColor: MACHINES.find(m => m.id === log.machineId)?.color || 'bg-gray-500' }; acc[key].totalProduction += log.count; if (new Date(log.timestamp) >= new Date(acc[key].timestamp)) { acc[key].lastCounter = log.totalCounter; acc[key].timestamp = log.timestamp; if (log.type === 'finish') acc[key].isFinished = true; } return acc; }, {}); return Object.values(summary); 
+            }, [recentLogs, MACHINES]);
 
             const filteredSales = useMemo(() => {
                 let result = sales;
@@ -209,7 +297,6 @@
                 }
                 if (searchTerm) result = result.filter(s => s.customer.includes(searchTerm.toUpperCase()));
                 if (productSearchTerm) result = result.filter(s => s.items && s.items.some(i => i.product.includes(productSearchTerm.toUpperCase())));
-                if (showAllTimeSales && !searchTerm && !productSearchTerm) return result.slice(0, 20);
                 return result;
             }, [sales, searchTerm, productSearchTerm, selectedSalesMonth, showAllTimeSales]);
 
@@ -247,98 +334,37 @@
 
             const mConfig = MACHINES.find(m => m.id === activeMachine) || MACHINES[0];
             
-            // --- WHATSAPP LINK HESAPLA ---
-            useEffect(() => {
-                if (printSale && viewMode === 'receipt') {
-                    let text = `🧾 *AKDENİZ MAKİNA - SİPARİŞ FİŞİ*\n`;
-                    text += `📅 Tarih: ${new Date(printSale.date).toLocaleDateString('tr-TR')}\n`;
-                    text += `👤 Müşteri: ${printSale.customer}\n\n`;
-                    text += `📦 *ÜRÜNLER:*\n`;
-                    (printSale.items || []).forEach(item => { text += `- ${item.product} (${item.count} Adet): ${formatMoney(item.total, item.currency)}\n`; });
-                    text += `\n💰 *GENEL TOPLAM: ${formatMoney(printSale.grandTotal, printSale.currency || 'TRY')}*`;
-                    setWhatsappUrl(`https://wa.me/?text=${encodeURIComponent(text)}`);
-                }
-            }, [printSale, viewMode]);
-
-            // --- PDF OLUŞTUR VE İNDİR ---
             const handleDownloadPdf = () => {
-                if(!window.jspdf) {
-                    alert("PDF motoru yüklenemedi. Lütfen sayfayı yenileyin.");
-                    return;
-                }
-                
+                if(!window.jspdf) { alert("PDF motoru yüklenemedi."); return; }
                 const { jsPDF } = window.jspdf;
-                const doc = new jsPDF({
-                    orientation: 'p',
-                    unit: 'mm',
-                    format: 'a5'
-                });
-
-                const currencySym = CURRENCIES[printSale.currency || 'TRY'].symbol || 'TL';
+                const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a5' });
                 const trDate = new Date(printSale.date).toLocaleDateString('tr-TR');
 
-                doc.setFontSize(18);
-                doc.setFont("helvetica", "bold");
-                doc.text(trToEn("AKDENIZ MAKINA"), 74, 15, { align: 'center' });
-                
-                doc.setFontSize(12);
-                doc.setFont("helvetica", "normal");
-                doc.text(trToEn("TESLIM FISI / FATURA"), 74, 23, { align: 'center' });
-                
+                doc.setFontSize(18); doc.setFont("helvetica", "bold"); doc.text(trToEn("AKDENIZ MAKINA"), 74, 15, { align: 'center' });
+                doc.setFontSize(12); doc.setFont("helvetica", "normal"); doc.text(trToEn("TESLIM FISI / FATURA"), 74, 23, { align: 'center' });
                 doc.line(10, 26, 138, 26);
-
-                doc.setFontSize(10);
-                doc.text(trToEn(`SAYIN: ${printSale.customer}`), 10, 35);
-                doc.text(trToEn(`Tarih: ${trDate}`), 10, 40);
-                doc.text(trToEn(`Fis No: ${printSale.timestamp.slice(-6)}`), 138, 35, { align: 'right' });
+                doc.setFontSize(10); doc.text(trToEn(`SAYIN: ${printSale.customer}`), 10, 35); doc.text(trToEn(`Tarih: ${trDate}`), 10, 40); doc.text(trToEn(`Fis No: ${printSale.timestamp.slice(-6)}`), 138, 35, { align: 'right' });
 
                 const tableColumn = ["URUN", "MIK.", "FIYAT", "TUTAR"];
                 const tableRows = [];
-
                 (printSale.items || []).forEach(item => {
-                    const itemData = [
-                        trToEn(item.product),
-                        item.count,
-                        formatMoney(item.price, item.currency).replace('₺', 'TL').replace('€', 'EUR').replace('$', 'USD'),
-                        formatMoney(item.total, item.currency).replace('₺', 'TL').replace('€', 'EUR').replace('$', 'USD')
-                    ];
+                    const itemData = [ trToEn(item.product), item.count, formatMoney(item.price, item.currency).replace('₺', 'TL').replace('€', 'EUR').replace('$', 'USD'), formatMoney(item.total, item.currency).replace('₺', 'TL').replace('€', 'EUR').replace('$', 'USD') ];
                     tableRows.push(itemData);
                 });
 
-                doc.autoTable({
-                    head: [tableColumn],
-                    body: tableRows,
-                    startY: 45,
-                    theme: 'grid',
-                    headStyles: { fillColor: [50, 50, 50], textColor: [255, 255, 255], fontStyle: 'bold' },
-                    styles: { fontSize: 9, font: 'helvetica' },
-                    margin: { left: 10, right: 10 }
-                });
+                doc.autoTable({ head: [tableColumn], body: tableRows, startY: 45, theme: 'grid', headStyles: { fillColor: [50, 50, 50], textColor: [255, 255, 255], fontStyle: 'bold' }, styles: { fontSize: 9, font: 'helvetica' }, margin: { left: 10, right: 10 } });
 
                 let finalY = doc.lastAutoTable.finalY + 10;
-                
-                doc.setFontSize(10);
-                doc.text(trToEn(`Ara Toplam: ${formatMoney(printSale.subTotal, printSale.currency).replace('₺','TL')}`), 138, finalY, { align: 'right' });
+                doc.setFontSize(10); doc.text(trToEn(`Ara Toplam: ${formatMoney(printSale.subTotal, printSale.currency).replace('₺','TL')}`), 138, finalY, { align: 'right' });
                 doc.text(trToEn(`KDV Toplam: ${formatMoney(printSale.kdvTotal, printSale.currency).replace('₺','TL')}`), 138, finalY + 5, { align: 'right' });
-                
-                doc.setFontSize(14);
-                doc.setFont("helvetica", "bold");
-                doc.text(trToEn(`GENEL TOPLAM: ${formatMoney(printSale.grandTotal, printSale.currency).replace('₺','TL')}`), 138, finalY + 12, { align: 'right' });
-                
-                doc.setFontSize(8);
-                doc.setFont("helvetica", "italic");
-                doc.setTextColor(150);
-                doc.text(trToEn("Tesekkur Ederiz."), 74, finalY + 25, { align: 'center' });
-
-                // DİREKT İNDİRME KOMUTU
+                doc.setFontSize(14); doc.setFont("helvetica", "bold"); doc.text(trToEn(`GENEL TOPLAM: ${formatMoney(printSale.grandTotal, printSale.currency).replace('₺','TL')}`), 138, finalY + 12, { align: 'right' });
+                doc.setFontSize(8); doc.setFont("helvetica", "italic"); doc.setTextColor(150); doc.text(trToEn("Tesekkur Ederiz."), 74, finalY + 25, { align: 'center' });
                 doc.save(`fis-${printSale.timestamp.slice(-6)}.pdf`);
             };
 
-            // --- AKSİYONLAR ---
             const handleSaveClick = () => { if(!partName || !inputCounter) return alert("Eksik bilgi!"); const current = parseInt(inputCounter); if(isNaN(current)) return alert("Geçersiz sayı"); if (isFirstRecordOfBatch && current > 0) { setModalType('initial_ask'); setModalData({ current }); setShowModal(true); return; } let production = current - lastCounterValue; if(production < 0) production = 0; setModalType('save'); setModalData({ current, production, prev: lastCounterValue }); setShowModal(true); };
             const handleFinishClick = () => { if(!partName || !inputCounter) return alert("Eksik bilgi!"); const current = parseInt(inputCounter); let production = current - lastCounterValue; if(isFirstRecordOfBatch && current > 0) { setModalType('finish_initial'); setModalData({ current }); setShowModal(true); return; } setModalType('finish'); setModalData({ current, production, prev: lastCounterValue }); setShowModal(true); };
             
-            // DÜZELTME: Kayıt yaparken yerel saat kullan
             const executeSave = async (isInitial) => { setShowModal(false); try { const current = parseInt(inputCounter); let production = (isInitial || modalType === 'initial_ask') ? (modalType === 'initial_ask' && !isInitial ? current : 0) : current - lastCounterValue; if(production < 0) production = 0; await addDoc(collection(db, "logs"), { machineId: activeMachine, partName: partName.toUpperCase().trim(), count: production, totalCounter: current, date: getTodayDate(), timestamp: new Date().toISOString() }); setInputCounter(''); setShowToast(true); setTimeout(()=>setShowToast(false), 2000); } catch(e) { alert("Hata: " + e.message); } };
             const executeFinish = async (isInitial) => { setShowModal(false); try { const current = parseInt(inputCounter); let production = (isInitial || modalType === 'finish_initial') ? (modalType === 'finish_initial' && !isInitial ? current : 0) : current - lastCounterValue; if(production < 0) production = 0; if (production > 0 || isInitial) { await addDoc(collection(db, "logs"), { machineId: activeMachine, partName: partName.toUpperCase().trim(), count: production, totalCounter: current, type: 'finish', date: getTodayDate(), timestamp: new Date().toISOString() }); } setTimeout(async () => { await addDoc(collection(db, "resets"), { partName: partName.toUpperCase().trim(), resetDate: new Date().toISOString() }); setInputCounter(''); alert("Parti Kapatıldı."); }, 500); } catch(e) { alert("Hata: " + e.message); } };
             
@@ -359,7 +385,6 @@
             const askDeleteSale = (id, e) => { if(e) e.stopPropagation(); setModalData({ saleId: id }); setModalType('delete_sale'); setShowModal(true); };
             const executeDeleteSale = async () => { setShowModal(false); if(modalData.saleId) { await deleteDoc(doc(db, "sales_demo", modalData.saleId)); setPrintSale(null); setEditingSaleId(null); } };
 
-            // --- FİŞ BİLEŞENİ (YALIN) ---
             const ReceiptView = () => {
                 if (!printSale) return null;
                 let pSubTotal = printSale.subTotal; let pKdvTotal = printSale.kdvTotal;
@@ -382,14 +407,9 @@
                         ),
                         React.createElement("div", {className: "mt-10 text-center text-xs text-gray-400"}, "Teşekkür Ederiz.")
                     ),
-                    // ALT SABİT BUTONLAR
                     React.createElement("div", {className: "fixed bottom-0 left-0 w-full p-4 bg-white border-t border-gray-200 flex gap-2 z-[999] no-print safe-pb shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]"},
                         React.createElement("button", {onClick: () => setViewMode('app'), className: "flex-none w-14 py-3 bg-slate-100 rounded-xl font-bold text-slate-600 flex justify-center items-center active:bg-slate-200"}, React.createElement(IconArrowLeft)),
-                        
-                        // WhatsApp Linki (Buton Görünümlü)
-                        whatsappUrl && React.createElement("a", {href: whatsappUrl, target: "_blank", className: "flex-1 py-3 bg-green-500 rounded-xl font-bold text-white flex justify-center items-center gap-2 shadow-lg shadow-green-200 active:bg-green-600 no-underline text-xs md:text-sm"}, React.createElement(IconMessageCircle), "WHATSAPP"),
-                        
-                        // PDF İndirme Butonu (Doğrudan Tıklama)
+                        // Whatsapp kaldırıldı, PDF tek başına
                         React.createElement("button", {onClick: handleDownloadPdf, className: "flex-1 py-3 bg-blue-600 rounded-xl font-bold text-white flex justify-center items-center gap-2 shadow-lg active:bg-blue-700 text-xs md:text-sm"}, React.createElement(IconFileText), "PDF İNDİR")
                     )
                 );
@@ -399,9 +419,11 @@
                 return React.createElement(ReceiptView);
             }
 
-            const historyLogs = logs.filter(l => l.date === selectedHistoryDate);
+            // Hangi liste gösterilecek?
+            const displayLogs = historyMode === 'date' ? historyLogs : partHistoryLogs;
 
             return React.createElement("div", {className: "min-h-screen pb-20 font-sans safe-pt bg-slate-50 relative"},
+                React.createElement("datalist", {id: "prods"}, uniqueProducts.map(p=>React.createElement("option", {key: p, value: p}))), // ÖNEMLİ: id="prods" tüm inputlar için kaynak
                 React.createElement("datalist", {id: "saleCustomerList"}, uniqueCustomers.map(c => React.createElement("option", {key: c, value: c}))),
                 React.createElement("datalist", {id: "saleProductList"}, uniqueSalesProducts.map(p => React.createElement("option", {key: p, value: p}))),
                 
@@ -437,7 +459,7 @@
                     activeTab === 'entry' && React.createElement("div", {className: "space-y-6"},
                          React.createElement("div", {className: "grid grid-cols-3 gap-2"}, MACHINES.map(m => React.createElement("button", {key: m.id, onClick: ()=>setActiveMachine(m.id), className: `py-3 rounded-xl border-b-4 ${activeMachine===m.id ? m.color+' text-white' : 'bg-white'}`}, m.id))),
                          React.createElement("div", {className: "bg-white p-5 rounded-2xl shadow-sm border space-y-4"},
-                            React.createElement("div", {}, React.createElement("label", {className: "text-xs font-bold text-gray-400"}, "PARÇA"), React.createElement("input", {list: "prods", value: partName, onChange: e=>setPartName(e.target.value), className: "w-full p-3 bg-slate-50 border rounded-xl font-bold uppercase", placeholder: "MİL-1"}), React.createElement("datalist", {id: "prods"}, uniqueProducts.map(p=>React.createElement("option", {key: p, value: p})))),
+                            React.createElement("div", {}, React.createElement("label", {className: "text-xs font-bold text-gray-400"}, "PARÇA"), React.createElement("input", {list: "prods", value: partName, onChange: e=>setPartName(e.target.value), className: "w-full p-3 bg-slate-50 border rounded-xl font-bold uppercase", placeholder: "MİL-1"})),
                             partName && React.createElement("div", {className: "grid grid-cols-3 gap-2 text-center bg-slate-50 p-3 rounded-xl"}, React.createElement("div", {}, React.createElement("div", {className:"text-[9px] text-gray-400"}, "BUGÜN"), React.createElement("div", {className:"font-bold"}, stats.daily)), React.createElement("div", {className:"text-blue-600"}, React.createElement("div", {className:"text-[9px]"}, "BU PARTİ"), React.createElement("div", {className:"font-bold text-lg"}, stats.batch)), React.createElement("div", {}, React.createElement("div", {className:"text-[9px] text-gray-400"}, "YIL"), React.createElement("div", {className:"font-bold"}, stats.yearly))),
                             React.createElement("div", {}, React.createElement("div", {className: "flex justify-between mb-1"}, React.createElement("label", {className: "text-xs font-bold text-gray-400"}, "MAKİNE SAYAÇ (TOPLAM)"), !isFirstRecordOfBatch && React.createElement("span", {className: "text-[10px] font-bold text-blue-600"}, "Önceki: " + lastCounterValue)), React.createElement("input", {type: "number", value: inputCounter, onChange: e=>setInputCounter(e.target.value), className: "w-full p-4 text-4xl font-bold text-center bg-slate-50 border rounded-xl", placeholder: "0", inputMode: "numeric"}), isFirstRecordOfBatch && inputCounter && React.createElement("div", {className: "text-xs text-center mt-2 text-yellow-600 font-bold"}, "Yeni Parti Başlangıcı")),
                             React.createElement("div", {className: "space-y-4"}, React.createElement("button", {onClick: handleSaveClick, className: `w-full py-4 rounded-xl text-white font-bold text-lg shadow-lg ${mConfig.color}`}, "KAYDET"), React.createElement("button", {onClick: handleFinishClick, className: "w-full py-4 bg-red-600 rounded-xl text-white font-bold text-lg shadow-lg"}, "KAYDET VE BİTİR"))
@@ -446,9 +468,22 @@
                     ),
 
                     activeTab === 'history' && React.createElement("div", {}, 
-                        React.createElement("div", {className: "bg-white p-4 rounded-xl border mb-4"}, React.createElement("input", {type: "date", value: selectedHistoryDate, onChange: e=>setSelectedHistoryDate(e.target.value), className: "w-full p-2 border rounded-lg"})),
-                        historyLogs.length === 0 ? React.createElement("div", {className: "text-center p-10 text-gray-400 italic"}, "Bu tarihte kayıt bulunamadı.") :
-                        historyLogs.map(l => { const mColor = MACHINES.find(m => m.id === l.machineId)?.color || 'bg-gray-500'; return React.createElement("div", {key: l.id, onClick: ()=>{setEditLog(l); setShowEditModal(true);}, className: `bg-white p-3 rounded-xl border mb-2 flex justify-between items-center cursor-pointer active:bg-slate-50 ${l.type==='finish'?'border-red-300 bg-red-50':''}`}, React.createElement("div", {}, React.createElement("span", {className: `text-xs font-bold text-white px-2 py-1 rounded mr-2 ${mColor}`}, l.machineId), React.createElement("span", {className: "font-bold"}, l.partName)), React.createElement("div", {className: "text-right"}, React.createElement("div", {className: "font-bold text-lg flex items-center justify-end gap-2"}, l.count, l.type === 'finish' && React.createElement("span", {className:"text-[10px] bg-red-600 text-white px-1 rounded flex items-center gap-1"}, "BİTTİ", React.createElement(IconFlag, {className:"w-3 h-3 text-white"}))), React.createElement("div", {className: "text-sm font-bold text-gray-500"}, "Toplam (Sayaç): " + (l.totalCounter || '-')))); })
+                        React.createElement("div", {className: "bg-white p-2 rounded-xl border mb-4 shadow-sm"}, 
+                            React.createElement("div", {className: "flex bg-slate-100 p-1 rounded-lg mb-2"},
+                                React.createElement("button", {onClick: ()=>setHistoryMode('date'), className: `flex-1 py-1 text-xs font-bold rounded-md ${historyMode==='date'?'bg-white shadow text-slate-800':'text-slate-400'}`}, "TARİHE GÖRE"),
+                                React.createElement("button", {onClick: ()=>setHistoryMode('part'), className: `flex-1 py-1 text-xs font-bold rounded-md ${historyMode==='part'?'bg-white shadow text-slate-800':'text-slate-400'}`}, "PARÇA SORGULA")
+                            ),
+                            historyMode === 'date' ? 
+                                React.createElement("input", {type: "date", value: selectedHistoryDate, onChange: e=>setSelectedHistoryDate(e.target.value), className: "w-full p-2 bg-slate-50 border rounded-lg font-bold"}) :
+                                React.createElement("div", {},
+                                    // Güncelleme: list="prods" kullanarak otomatik tamamlama
+                                    React.createElement("input", {list: "prods", value: historySearchTerm, onChange: e=>setHistorySearchTerm(e.target.value), placeholder: "Parça Adı Yaz (Örn: MİL-1)", className: "w-full p-2 bg-slate-50 border rounded-lg font-bold uppercase"}),
+                                    historySearchTerm && React.createElement("div", {className:"text-[10px] text-gray-400 mt-1 text-center"}, "Son 50 kayıt gösteriliyor")
+                                )
+                        ),
+                        isHistoryLoading ? React.createElement("div", {className: "text-center p-10 text-gray-400 animate-pulse"}, "Yükleniyor...") :
+                        displayLogs.length === 0 ? React.createElement("div", {className: "text-center p-10 text-gray-400 italic"}, "Kayıt bulunamadı.") :
+                        displayLogs.map(l => { const mColor = MACHINES.find(m => m.id === l.machineId)?.color || 'bg-gray-500'; return React.createElement("div", {key: l.id, onClick: ()=>{setEditLog(l); setShowEditModal(true);}, className: `bg-white p-3 rounded-xl border mb-2 flex justify-between items-center cursor-pointer active:bg-slate-50 ${l.type==='finish'?'border-red-300 bg-red-50':''}`}, React.createElement("div", {}, React.createElement("span", {className: `text-xs font-bold text-white px-2 py-1 rounded mr-2 ${mColor}`}, l.machineId), React.createElement("span", {className: "font-bold"}, l.partName), React.createElement("div", {className:"text-[10px] text-gray-400 mt-1"}, historyMode==='part' ? new Date(l.date).toLocaleDateString('tr-TR') : '')), React.createElement("div", {className: "text-right"}, React.createElement("div", {className: "font-bold text-lg flex items-center justify-end gap-2"}, l.count, l.type === 'finish' && React.createElement("span", {className:"text-[10px] bg-red-600 text-white px-1 rounded flex items-center gap-1"}, "BİTTİ", React.createElement(IconFlag, {className:"w-3 h-3 text-white"}))), React.createElement("div", {className: "text-sm font-bold text-gray-500"}, "Toplam (Sayaç): " + (l.totalCounter || '-')))); })
                     ),
 
                     activeTab === 'sales' && React.createElement("div", {className: "space-y-4"},
