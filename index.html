@@ -42,7 +42,9 @@
     <div id="root"></div>
 
     <script type="module">
+        // GÜNCELLEME: Firebase Auth kütüphanelerini ekledik
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, doc, updateDoc, deleteDoc, limit, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         const { useState, useEffect, useMemo } = React;
@@ -57,10 +59,11 @@
             appId: "1:627287710354:web:4b04d452c51ac793bda44b"
         };
 
-        let app, db, dbError = null;
+        let app, db, auth, dbError = null;
         try {
             app = initializeApp(firebaseConfig);
             db = getFirestore(app);
+            auth = getAuth(app); // GÜNCELLEME: Kimlik sistemi başlatıldı
         } catch (e) {
             console.error(e);
             dbError = e.message;
@@ -119,6 +122,7 @@
                 { id: 'A32', name: 'Makina A32', color: 'bg-emerald-600', text:'text-emerald-600', bg:'bg-emerald-50' }
             ];
 
+            const [user, setUser] = useState(null); // GÜNCELLEME: Kullanıcı Takibi
             const [activeTab, setActiveTab] = useState('entry');
             const [isLoading, setIsLoading] = useState(true);
             const [showToast, setShowToast] = useState(false);
@@ -168,26 +172,43 @@
             const [isSalesFormOpen, setIsSalesFormOpen] = useState(false);
             const [showReportModal, setShowReportModal] = useState(false);
 
-            // 1. ANA VERİ DİNLEYİCİSİ
+            // GÜNCELLEME: UYGULAMA AÇILDIĞINDA OTOMATİK GİRİŞ YAP
             useEffect(() => {
-                if (!db) return;
+                const unsubAuth = onAuthStateChanged(auth, (u) => {
+                    if (u) {
+                        setUser(u); // Zaten giriş yapmış
+                    } else {
+                        // Giriş yapmamışsa, gizlice giriş yap
+                        signInAnonymously(auth).catch((error) => {
+                            console.error("Giriş hatası:", error);
+                        });
+                    }
+                });
+                return () => unsubAuth();
+            }, []);
+
+            // 1. ANA VERİ DİNLEYİCİSİ (SADECE GİRİŞ YAPILDIYSA ÇALIŞIR)
+            useEffect(() => {
+                if (!db || !user) return; // User yoksa veri çekmeye çalışma
                 
                 const qRecent = query(collection(db, "logs"), orderBy("timestamp", "desc"), limit(150));
                 
                 const unsubLogs = onSnapshot(qRecent, (s) => { 
                     setRecentLogs(s.docs.map(d => ({ id: d.id, ...d.data() }))); 
                     setIsLoading(false); 
+                }, (error) => {
+                    console.log("Henüz yetki yok, bekleniyor...");
                 });
 
                 const unsubResets = onSnapshot(query(collection(db, "resets"), orderBy("resetDate", "desc"), limit(50)), (s) => setBatchResets(s.docs.map(d => ({ id: d.id, ...d.data() }))));
                 const unsubSales = onSnapshot(query(collection(db, "sales_demo"), orderBy("timestamp", "desc"), limit(100)), (s) => setSales(s.docs.map(d => ({ id: d.id, ...d.data() }))));
                 
                 return () => { unsubLogs(); unsubResets(); unsubSales(); };
-            }, []);
+            }, [user]); // user değişkeni değişince (giriş yapılınca) burası çalışır
 
             // 2. GEÇMİŞ: TARİH BAZLI DİNLEYİCİ
             useEffect(() => {
-                if (!db || !selectedHistoryDate || historyMode !== 'date') return;
+                if (!db || !selectedHistoryDate || historyMode !== 'date' || !user) return;
                 
                 setIsHistoryLoading(true);
                 const qHistory = query(collection(db, "logs"), where("date", "==", selectedHistoryDate), orderBy("timestamp", "desc"));
@@ -198,11 +219,11 @@
                 });
 
                 return () => unsubHistory();
-            }, [selectedHistoryDate, historyMode]);
+            }, [selectedHistoryDate, historyMode, user]);
 
             // 3. GEÇMİŞ: PARÇA BAZLI DİNLEYİCİ
             useEffect(() => {
-                if (!db || historyMode !== 'part' || !historySearchTerm) {
+                if (!db || historyMode !== 'part' || !historySearchTerm || !user) {
                     setPartHistoryLogs([]);
                     return;
                 }
@@ -221,7 +242,7 @@
                 });
 
                 return () => unsubPart();
-            }, [historySearchTerm, historyMode]);
+            }, [historySearchTerm, historyMode, user]);
 
             const formatMoney = (val, cur) => {
                 const currencyInfo = CURRENCIES[cur] || CURRENCIES.TRY; 
@@ -242,7 +263,6 @@
                 return { subTotal, kdvTotal, grandTotal, currency: activeCurrency };
             }, [cart]);
 
-            // GÜNCELLENDİ: Parça listesi hem son kayıtlardan hem de eski reset kayıtlarından gelir
             const uniqueProducts = useMemo(() => {
                 const fromLogs = recentLogs.map(l => l.partName);
                 const fromResets = batchResets.map(r => r.partName);
