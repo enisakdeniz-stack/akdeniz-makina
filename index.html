@@ -84,6 +84,11 @@
             return `${year}-${month}-${day}`;
         };
 
+        // YENİ: Varsayılan ayı güvenli şekilde al
+        const getCurrentMonth = () => {
+            return getTodayDate().slice(0, 7); // YYYY-MM
+        };
+
         const trToEn = (str) => {
             if (!str) return "";
             return str
@@ -162,7 +167,8 @@
             const [sales, setSales] = useState([]);
             const [searchTerm, setSearchTerm] = useState('');
             const [productSearchTerm, setProductSearchTerm] = useState('');
-            const [selectedSalesMonth, setSelectedSalesMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
+            // YENİ: Varsayılan ayı güvenli fonksiyonla al
+            const [selectedSalesMonth, setSelectedSalesMonth] = useState(getCurrentMonth()); 
             const [showAllTimeSales, setShowAllTimeSales] = useState(false);
             const [editingSaleId, setEditingSaleId] = useState(null);
             const [printSale, setPrintSale] = useState(null);
@@ -549,9 +555,41 @@
                             )
                         ),
 
+                        React.createElement("div", {className: "bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-3"},
+                            React.createElement("div", {className: "flex items-center justify-between border-b pb-2 mb-2"},
+                                React.createElement("h3", {className: "text-xs font-black text-slate-400 uppercase flex items-center gap-1"}, React.createElement(IconCalendar, {width:16}), "SATIŞ ARŞİVİ")
+                            ),
+                            // YENİ TASARIM: Her zaman görünür filtreler
+                            React.createElement("div", {className: "flex gap-2 items-center mb-2"},
+                                React.createElement("span", {className: "text-xs font-bold text-slate-500 w-16"}, "DÖNEM:"),
+                                React.createElement("input", {
+                                    type: "month", 
+                                    value: selectedSalesMonth, 
+                                    disabled: showAllTimeSales, // Sadece pasif yap, gizleme
+                                    onChange: e=>setSelectedSalesMonth(e.target.value), 
+                                    className: `flex-1 p-2 border rounded-lg font-bold text-sm outline-none ${showAllTimeSales ? 'bg-slate-100 text-slate-400' : 'bg-slate-50 text-slate-800'}`
+                                })
+                            ),
+                            React.createElement("div", {className: "flex justify-end mb-2"},
+                                 React.createElement("label", {className: "text-[10px] font-bold text-purple-600 flex items-center gap-1 cursor-pointer"}, 
+                                    React.createElement("input", {type: "checkbox", checked: showAllTimeSales, onChange: e=>setShowAllTimeSales(e.target.checked), className: "accent-purple-600"}), "TÜM ZAMANLARI GÖSTER"
+                                )
+                            ),
+                            React.createElement("div", {className: "flex gap-2"},
+                                React.createElement("div", {className: "relative flex-1"},
+                                    React.createElement("input", {value: searchTerm, onChange: e=>setSearchTerm(e.target.value), placeholder: "Müşteri Ara...", className: "w-full p-2.5 pl-8 border rounded-xl text-xs font-bold outline-none"}),
+                                    React.createElement("div", {className: "absolute left-2.5 top-3"}, React.createElement(IconSearch, {width:16}))
+                                ),
+                                React.createElement("div", {className: "relative flex-1"},
+                                    React.createElement("input", {value: productSearchTerm, onChange: e=>setProductSearchTerm(e.target.value), placeholder: "Ürün Ara...", className: "w-full p-2.5 pl-8 border rounded-xl text-xs font-bold outline-none"}),
+                                    React.createElement("div", {className: "absolute left-2.5 top-3"}, React.createElement(IconSearch, {width:16}))
+                                )
+                            )
+                        ),
+
                         React.createElement("div", {className: "space-y-2"},
                             filteredSales.length === 0 ? React.createElement("div", {className: "text-center p-10 text-slate-400 text-sm italic"}, "Bu kriterlere uygun satış bulunamadı.") :
-                            filteredSales.map(sale => React.createElement("div", {key: sale.id, onClick: ()=>openReceiptMode(sale), className: "bg-white p-4 rounded-xl border border-slate-200 shadow-sm relative animate-fade-in cursor-pointer active:bg-slate-50"}, // BURAYA EKLENDİ (onClick)
+                            filteredSales.map(sale => React.createElement("div", {key: sale.id, onClick: ()=>openReceiptMode(sale), className: "bg-white p-4 rounded-xl border border-slate-200 shadow-sm relative animate-fade-in cursor-pointer active:bg-slate-50"},
                                 React.createElement("div", {className: "flex justify-between items-start"},
                                     React.createElement("div", {className:"flex-1"},
                                         React.createElement("div", {className: "font-bold text-slate-800 text-lg"}, sale.customer),
