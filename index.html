@@ -44,7 +44,6 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-        // GÜNCELLEME: getDocs fonksiyonu eklendi (toplu arama ve güncelleme için gerekli)
         import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, doc, updateDoc, deleteDoc, limit, where, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         const { useState, useEffect, useMemo } = React;
@@ -142,7 +141,7 @@
             const [historyMode, setHistoryMode] = useState('date');
             const [historySearchTerm, setHistorySearchTerm] = useState('');
 
-            // YENİ: Toplu İsim Düzeltme States
+            // Toplu İsim Düzeltme States
             const [showRenameModal, setShowRenameModal] = useState(false);
             const [renameOld, setRenameOld] = useState('');
             const [renameNew, setRenameNew] = useState('');
@@ -338,30 +337,67 @@
                 return [...new Set(saleProds)].sort();
             }, [sales]);
 
+            // GÜNCELLEME: Döviz türlerine göre istatistikleri ayırdık
             const salesStats = useMemo(() => {
                 const now = new Date();
-                let monthlyTotal = 0; let yearlyTotal = 0;
+                const stats = {
+                    TRY: { monthly: 0, yearly: 0 },
+                    USD: { monthly: 0, yearly: 0 },
+                    EUR: { monthly: 0, yearly: 0 }
+                };
                 sales.forEach(s => {
                     const d = new Date(s.date);
+                    const cur = s.currency || 'TRY';
+                    if (!stats[cur]) stats[cur] = { monthly: 0, yearly: 0 };
+                    
                     if (d.getFullYear() === now.getFullYear()) {
-                        yearlyTotal += s.grandTotal;
-                        if (d.getMonth() === now.getMonth()) monthlyTotal += s.grandTotal;
+                        stats[cur].yearly += s.grandTotal;
+                        if (d.getMonth() === now.getMonth()) {
+                            stats[cur].monthly += s.grandTotal;
+                        }
                     }
                 });
-                return { monthlyTotal, yearlyTotal };
+                return stats;
             }, [sales]);
 
+            // GÜNCELLEME: Müşteri cirolarını döviz türüne göre ayırdık
             const reportData = useMemo(() => {
-                const productStats = {}; const customerStats = {}; const currentYear = new Date().getFullYear();
+                const productStats = {}; 
+                const customerStats = {}; 
+                const currentYear = new Date().getFullYear();
+                
                 sales.forEach(s => {
                     if (new Date(s.date).getFullYear() === currentYear) {
-                        if (!customerStats[s.customer]) customerStats[s.customer] = 0; customerStats[s.customer] += s.grandTotal;
-                        if (s.items) { s.items.forEach(item => { if (!productStats[item.product]) productStats[item.product] = 0; productStats[item.product] += item.count; }); }
+                        const cur = s.currency || 'TRY';
+                        
+                        // Müşteri ciro hesaplaması (Döviz bazlı)
+                        if (!customerStats[s.customer]) customerStats[s.customer] = {};
+                        if (!customerStats[s.customer][cur]) customerStats[s.customer][cur] = 0;
+                        customerStats[s.customer][cur] += s.grandTotal;
+
+                        // Ürün adet hesaplaması
+                        if (s.items) { 
+                            s.items.forEach(item => { 
+                                if (!productStats[item.product]) productStats[item.product] = 0; 
+                                productStats[item.product] += item.count; 
+                            }); 
+                        }
                     }
                 });
+                
                 const sortedProducts = Object.entries(productStats).sort((a,b) => b[1] - a[1]);
-                const sortedCustomers = Object.entries(customerStats).sort((a,b) => b[1] - a[1]);
-                return { sortedProducts, sortedCustomers };
+                
+                // Müşterileri düz bir listeye çevir ve sırala
+                const flatCustomers = [];
+                Object.entries(customerStats).forEach(([cus, curs]) => {
+                    Object.entries(curs).forEach(([cur, val]) => {
+                        flatCustomers.push({ name: cus, currency: cur, total: val });
+                    });
+                });
+                // Kabaca sayısal büyüklüğe göre sırala (Döviz kurları farklı olsa da liste düzeni için)
+                flatCustomers.sort((a,b) => b.total - a.total);
+
+                return { sortedProducts, flatCustomers };
             }, [sales]);
 
             const mConfig = MACHINES.find(m => m.id === activeMachine) || MACHINES[0];
@@ -403,7 +439,6 @@
             const handleEditSave = async () => { if(!editLog) return; try { await updateDoc(doc(db, "logs", editLog.id), { machineId: editLog.machineId, count: parseInt(editLog.count), totalCounter: editLog.totalCounter ? parseInt(editLog.totalCounter) : null, date: editLog.date, partName: editLog.partName.toUpperCase(), type: editLog.type }); setShowEditModal(false); setEditLog(null); alert("Güncellendi."); } catch (e) { alert("Hata: " + e.message); } };
             const executeDelete = async () => { setShowModal(false); if(editLog) { await deleteDoc(doc(db, "logs", editLog.id)); setEditLog(null); setShowEditModal(false); } };
 
-            // YENİ: Toplu İsim Düzeltme Fonksiyonu
             const handleBatchRename = async () => {
                 if (!renameOld || !renameNew) return alert("Lütfen iki alanı da doldurun.");
                 const oldUpper = renameOld.toUpperCase().trim();
@@ -415,14 +450,12 @@
                 try {
                     let updatedCount = 0;
 
-                    // 1. Üretim Geçmişi (Logs) tablosunda bul ve düzelt
                     const logsQuery = query(collection(db, "logs"), where("partName", "==", oldUpper));
                     const logsSnap = await getDocs(logsQuery);
                     const logPromises = logsSnap.docs.map(d => updateDoc(doc(db, "logs", d.id), { partName: newUpper }));
                     await Promise.all(logPromises);
                     updatedCount += logsSnap.size;
 
-                    // 2. Sıfırlama (Resets) tablosunda bul ve düzelt
                     const resetsQuery = query(collection(db, "resets"), where("partName", "==", oldUpper));
                     const resetsSnap = await getDocs(resetsQuery);
                     const resetPromises = resetsSnap.docs.map(d => updateDoc(doc(db, "resets", d.id), { partName: newUpper }));
@@ -434,7 +467,7 @@
                     setShowRenameModal(false);
                     setRenameOld('');
                     setRenameNew('');
-                    setHistorySearchTerm(newUpper); // Arama kutusunu yeni isme ayarla ki hemen görsün
+                    setHistorySearchTerm(newUpper); 
                     setHistoryMode('part');
                 } catch (error) {
                     console.error("Toplu güncelleme hatası:", error);
@@ -515,12 +548,11 @@
                     )
                 ),
                 
-                // YENİ: İsim Düzeltme Modalı
                 showRenameModal && React.createElement("div", {className: "fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 no-print"},
                     React.createElement("div", {className: "bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl text-center animate-fade-in"},
                         React.createElement("div", {className: "text-4xl mb-3"}, "🛠️"),
                         React.createElement("h3", {className: "font-bold mb-2 text-purple-700 text-lg uppercase"}, "İsim Düzelt / Birleştir"),
-                        React.createElement("p", {className: "mb-6 text-xs text-slate-500 leading-tight"}, "Yanlış yazılan bir parça ismini veritabanının her yerinde (üretimler ve parti bitişleri) arayıp saniyeler içinde düzeltir."),
+                        React.createElement("p", {className: "mb-6 text-xs text-slate-500 leading-tight"}, "Yanlış yazılan bir parça ismini veritabanının her yerinde arayıp saniyeler içinde düzeltir."),
                         React.createElement("div", {className: "text-left space-y-3 mb-6"},
                             React.createElement("div", {}, 
                                 React.createElement("label", {className: "text-[10px] font-bold text-gray-500"}, "YANLIŞ YAZILAN İSİM (Eski)"),
@@ -566,7 +598,6 @@
 
                     activeTab === 'history' && React.createElement("div", {}, 
                         React.createElement("div", {className: "bg-white p-2 rounded-xl border mb-4 shadow-sm"}, 
-                            // GÜNCELLEME: "🛠️ DÜZELT" butonu buraya eklendi
                             React.createElement("div", {className: "flex bg-slate-100 p-1 rounded-lg mb-2 gap-1"},
                                 React.createElement("button", {onClick: ()=>setHistoryMode('date'), className: `flex-1 py-1.5 text-[10px] font-bold rounded-md ${historyMode==='date'?'bg-white shadow text-slate-800':'text-slate-400'}`}, "TARİHE GÖRE"),
                                 React.createElement("button", {onClick: ()=>setHistoryMode('part'), className: `flex-1 py-1.5 text-[10px] font-bold rounded-md ${historyMode==='part'?'bg-white shadow text-slate-800':'text-slate-400'}`}, "PARÇA SORGULA"),
@@ -682,17 +713,41 @@
                     React.createElement("div", {className: "bg-white w-full max-w-sm rounded-2xl shadow-2xl p-5 overflow-hidden flex flex-col max-h-[90vh]"},
                         React.createElement("div", {className: "flex justify-between items-center mb-4 border-b pb-2"}, React.createElement("h3", {className: "font-bold text-lg"}, "Yönetim Raporu"), React.createElement("button", {onClick: ()=>setShowReportModal(false), className: "p-2 bg-slate-100 rounded-full"}, React.createElement(IconClose))),
                         React.createElement("div", {className: "overflow-y-auto flex-1 pr-2 space-y-6"},
-                            React.createElement("div", {className: "grid grid-cols-2 gap-3 mb-2"},
-                                React.createElement("div", {className: "bg-purple-50 p-3 rounded-xl border border-purple-100"}, React.createElement("div", {className: "text-[10px] font-bold text-slate-500"}, "BU AY CİRO"), React.createElement("div", {className: "text-lg font-black text-purple-700"}, salesStats.monthlyTotal.toLocaleString('tr-TR', {maximumFractionDigits:0}) + "₺")),
-                                React.createElement("div", {className: "bg-blue-50 p-3 rounded-xl border border-blue-100"}, React.createElement("div", {className: "text-[10px] font-bold text-slate-500"}, "BU YIL CİRO"), React.createElement("div", {className: "text-lg font-black text-slate-700"}, salesStats.yearlyTotal.toLocaleString('tr-TR', {maximumFractionDigits:0}) + "₺"))
+                            
+                            // GÜNCELLEME: Döviz türlerine göre ayrılmış Ciro Kutuları
+                            React.createElement("div", {className: "space-y-2"},
+                                ['TRY', 'USD', 'EUR'].map(cur => {
+                                    const stat = salesStats[cur];
+                                    if (!stat || stat.yearly === 0) return null;
+                                    const isExport = cur !== 'TRY';
+                                    return React.createElement("div", {key: cur, className: `p-3 rounded-xl border flex justify-between items-center ${isExport ? 'bg-emerald-50 border-emerald-100' : 'bg-blue-50 border-blue-100'}`},
+                                        React.createElement("div", {},
+                                            React.createElement("div", {className: `text-[10px] font-bold ${isExport ? 'text-emerald-600' : 'text-blue-600'}`}, isExport ? `İHRACAT CİRO (${cur})` : `YURTİÇİ CİRO (${cur})`),
+                                            React.createElement("div", {className: "text-xs text-slate-500 mt-1"}, "Bu Ay: " + formatMoney(stat.monthly, cur))
+                                        ),
+                                        React.createElement("div", {className: "text-right"},
+                                            React.createElement("div", {className: "text-[10px] text-slate-400 font-bold"}, "BU YIL TOPLAM"),
+                                            React.createElement("div", {className: "text-lg font-black text-slate-700"}, formatMoney(stat.yearly, cur))
+                                        )
+                                    );
+                                })
                             ),
+
                             React.createElement("div", {},
                                 React.createElement("h4", {className: "text-xs font-bold text-purple-700 uppercase mb-2"}, "En Çok Satan Ürünler"),
                                 reportData.sortedProducts.length === 0 ? React.createElement("div", {className: "text-gray-400 text-sm"}, "Veri yok") : reportData.sortedProducts.map(([name, qty], i) => React.createElement("div", {key: i, className: "flex justify-between text-sm py-1 border-b border-slate-50"}, React.createElement("span", {}, name), React.createElement("span", {className: "font-bold"}, qty + " Adet")))
                             ),
+                            
+                            // GÜNCELLEME: Müşteri listesinde İhracat etiketi ve doğru döviz simgesi
                             React.createElement("div", {},
                                 React.createElement("h4", {className: "text-xs font-bold text-purple-700 uppercase mb-2"}, "Müşteri Ciroları"),
-                                reportData.sortedCustomers.length === 0 ? React.createElement("div", {className: "text-gray-400 text-sm"}, "Veri yok") : reportData.sortedCustomers.map(([name, total], i) => React.createElement("div", {key: i, className: "flex justify-between text-sm py-1 border-b border-slate-50"}, React.createElement("span", {}, name), React.createElement("span", {className: "font-bold"}, total.toLocaleString('tr-TR') + " ₺")))
+                                reportData.flatCustomers.length === 0 ? React.createElement("div", {className: "text-gray-400 text-sm"}, "Veri yok") : reportData.flatCustomers.map((c, i) => React.createElement("div", {key: i, className: "flex justify-between items-center text-sm py-1 border-b border-slate-50"}, 
+                                    React.createElement("div", {}, 
+                                        React.createElement("span", {}, c.name),
+                                        c.currency !== 'TRY' && React.createElement("span", {className: "text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded ml-2 font-bold"}, "İHRACAT")
+                                    ), 
+                                    React.createElement("span", {className: "font-bold"}, formatMoney(c.total, c.currency))
+                                ))
                             )
                         )
                     )
