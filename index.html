@@ -202,7 +202,7 @@
                 }, (error) => console.log("Yetki bekleniyor..."));
 
                 const unsubResets = onSnapshot(query(collection(db, "resets"), orderBy("resetDate", "desc"), limit(50)), (s) => setBatchResets(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-                const unsubSales = onSnapshot(query(collection(db, "sales_demo"), orderBy("timestamp", "desc"), limit(100)), (s) => setSales(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+                const unsubSales = onSnapshot(query(collection(db, "sales_demo"), orderBy("timestamp", "desc"), limit(3000)), (s) => setSales(s.docs.map(d => ({ id: d.id, ...d.data() }))));
                 
                 return () => { unsubLogs(); unsubResets(); unsubSales(); };
             }, [user]);
