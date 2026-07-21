@@ -347,7 +347,20 @@
                 return [...new Set(saleProds)].sort();
             }, [sales]);
 
-            // GÜNCELLEME: Döviz türlerine göre istatistikleri ayırdık
+            // Aylık ciro geçmişi: her ay için döviz bazlı toplam (rapordaki "Aylık Ciro Geçmişi" bölümü için)
+            const monthlyStats = useMemo(() => {
+                const byMonth = {};
+                sales.forEach(s => {
+                    if (!s.date) return;
+                    const monthKey = String(s.date).slice(0, 7);
+                    const cur = s.currency || 'TRY';
+                    if (!byMonth[monthKey]) byMonth[monthKey] = { TRY: 0, USD: 0, EUR: 0 };
+                    if (byMonth[monthKey][cur] === undefined) byMonth[monthKey][cur] = 0;
+                    byMonth[monthKey][cur] += (s.grandTotal || 0);
+                });
+                return Object.keys(byMonth).sort((a,b) => b.localeCompare(a)).map(m => ({ month: m, totals: byMonth[m] }));
+            }, [sales]);
+
             const salesStats = useMemo(() => {
                 const now = new Date();
                 const stats = {
@@ -770,6 +783,23 @@
                                         React.createElement("div", {className: "text-right"},
                                             React.createElement("div", {className: "text-[10px] text-slate-400 font-bold"}, "BU YIL TOPLAM"),
                                             React.createElement("div", {className: "text-lg font-black text-slate-700"}, formatMoney(stat.yearly, cur))
+                                        )
+                                    );
+                                })
+                            ),
+
+                            React.createElement("div", {},
+                                React.createElement("h4", {className: "text-xs font-bold text-purple-700 uppercase mb-2"}, "Aylık Ciro Geçmişi"),
+                                monthlyStats.length === 0 ? React.createElement("div", {className: "text-gray-400 text-sm"}, "Veri yok") : monthlyStats.map(({month, totals}) => {
+                                    const label = new Date(month + '-01T00:00:00').toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
+                                    const parts = ['TRY', 'USD', 'EUR'].filter(c => totals[c] > 0);
+                                    return React.createElement("div", {key: month, className: "py-2 border-b border-slate-50"},
+                                        React.createElement("div", {className: "text-sm font-bold text-slate-700 mb-1"}, label),
+                                        React.createElement("div", {className: "flex flex-wrap gap-1.5"},
+                                            parts.map(c => React.createElement("span", {
+                                                key: c,
+                                                className: `text-xs font-bold px-2 py-1 rounded ${c === 'TRY' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'}`
+                                            }, formatMoney(totals[c], c) + (c !== 'TRY' ? ' (İhracat)' : '')))
                                         )
                                     );
                                 })
