@@ -129,7 +129,7 @@
             const [viewMode, setViewMode] = useState('app'); 
 
             // STATE - CNC
-            const [activeMachine, setActiveMachine] = useState(MACHINES[0].id);
+            const [lastUsedMachine, setLastUsedMachine] = useState(null);
             const [partName, setPartName] = useState('');
             const [inputCounter, setInputCounter] = useState('');
             const [selectedHistoryDate, setSelectedHistoryDate] = useState(getTodayDate());
@@ -275,24 +275,31 @@
                 const fromResets = batchResets.map(r => r.partName);
                 return Array.from(new Set([...fromLogs, ...fromResets])).sort();
             }, [recentLogs, batchResets]);
+
+            // Hızlı erişim için: en son işlem gören 8 farklı parça, en yeniden en eskiye
+            const recentPartNames = useMemo(() => {
+                const seen = new Set();
+                const result = [];
+                for (const l of recentLogs) {
+                    if (l.partName && !seen.has(l.partName)) {
+                        seen.add(l.partName);
+                        result.push(l.partName);
+                        if (result.length >= 8) break;
+                    }
+                }
+                return result;
+            }, [recentLogs]);
             
-            const latestReset = useMemo(() => { 
-                if(!partName) return null; 
-                const pName = partName.toUpperCase().trim(); 
-                const pResets = batchResets.filter(r => r.partName === pName); 
-                return pResets.length ? pResets[0] : null; 
-            }, [batchResets, partName]);
-
-            const lastRecord = useMemo(() => { 
-                if(!partName) return null; 
-                const pName = partName.toUpperCase().trim(); 
-                let relevantLogs = recentLogs.filter(l => l.partName === pName && l.machineId === activeMachine && l.totalCounter !== undefined); 
-                if (latestReset) relevantLogs = relevantLogs.filter(l => new Date(l.timestamp) > new Date(latestReset.resetDate)); 
-                return relevantLogs.length > 0 ? relevantLogs[0] : null; 
-            }, [recentLogs, latestReset, partName, activeMachine]);
-
-            const lastCounterValue = lastRecord ? lastRecord.totalCounter : 0;
-            const isFirstRecordOfBatch = !lastRecord;
+            // Belirli bir makine + parça için son sayaç bilgisini hesaplar (artık makine kaydet anında seçildiği için fonksiyon halinde)
+            const getMachineContext = (machineId, pNameRaw) => {
+                const pName = pNameRaw.toUpperCase().trim();
+                const pResets = batchResets.filter(r => r.partName === pName).sort((a,b) => new Date(b.resetDate) - new Date(a.resetDate));
+                const latestResetDate = pResets.length ? new Date(pResets[0].resetDate) : null;
+                let relevantLogs = recentLogs.filter(l => l.partName === pName && l.machineId === machineId && l.totalCounter !== undefined);
+                if (latestResetDate) relevantLogs = relevantLogs.filter(l => new Date(l.timestamp) > latestResetDate);
+                const lastRec = relevantLogs.length > 0 ? relevantLogs[0] : null;
+                return { lastCounterValue: lastRec ? lastRec.totalCounter : 0, isFirstRecordOfBatch: !lastRec };
+            };
 
             const stats = useMemo(() => { 
                 if (!partName) return { daily: 0, batch: 0, yearly: 0 }; 
@@ -403,7 +410,6 @@
                 return { sortedProducts, flatCustomers };
             }, [sales]);
 
-            const mConfig = MACHINES.find(m => m.id === activeMachine) || MACHINES[0];
             
             const handleDownloadPdf = () => {
                 if(!window.jspdf) { alert("PDF motoru yüklenemedi."); return; }
@@ -433,11 +439,26 @@
                 doc.save(`fis-${printSale.timestamp.slice(-6)}.pdf`);
             };
 
-            const handleSaveClick = () => { if(!partName || !inputCounter) return alert("Eksik bilgi!"); const current = parseInt(inputCounter); if(isNaN(current)) return alert("Geçersiz sayı"); if (isFirstRecordOfBatch && current > 0) { setModalType('initial_ask'); setModalData({ current }); setShowModal(true); return; } let production = current - lastCounterValue; if(production < 0) production = 0; setModalType('save'); setModalData({ current, production, prev: lastCounterValue }); setShowModal(true); };
-            const handleFinishClick = () => { if(!partName || !inputCounter) return alert("Eksik bilgi!"); const current = parseInt(inputCounter); if(isNaN(current)) return alert("Geçersiz sayı"); let production = current - lastCounterValue; if(production < 0) production = 0; if(isFirstRecordOfBatch && current > 0) { setModalType('finish_initial'); setModalData({ current }); setShowModal(true); return; } setModalType('finish'); setModalData({ current, production, prev: lastCounterValue }); setShowModal(true); };
+            const handleSaveClick = () => { if(!partName || !inputCounter) return alert("Eksik bilgi!"); const current = parseInt(inputCounter); if(isNaN(current)) return alert("Geçersiz sayı"); setModalType('select_machine'); setModalData({ current, action: 'save' }); setShowModal(true); };
+            const handleFinishClick = () => { if(!partName || !inputCounter) return alert("Eksik bilgi!"); const current = parseInt(inputCounter); if(isNaN(current)) return alert("Geçersiz sayı"); setModalType('select_machine'); setModalData({ current, action: 'finish' }); setShowModal(true); };
+
+            // Makine seçildikten sonra: o makine+parça için önceki sayaç bilgisini bulup uygun onay adımına geçer
+            const selectMachineForSave = (machineId) => {
+                const { current, action } = modalData;
+                const { lastCounterValue, isFirstRecordOfBatch } = getMachineContext(machineId, partName);
+                if (action === 'finish') {
+                    if (isFirstRecordOfBatch && current > 0) { setModalType('finish_initial'); setModalData({ current, machine: machineId }); return; }
+                    let production = current - lastCounterValue; if(production < 0) production = 0;
+                    setModalType('finish'); setModalData({ current, production, prev: lastCounterValue, machine: machineId });
+                } else {
+                    if (isFirstRecordOfBatch && current > 0) { setModalType('initial_ask'); setModalData({ current, machine: machineId }); return; }
+                    let production = current - lastCounterValue; if(production < 0) production = 0;
+                    setModalType('save'); setModalData({ current, production, prev: lastCounterValue, machine: machineId });
+                }
+            };
             
-            const executeSave = async (isInitial) => { setShowModal(false); try { const current = parseInt(inputCounter); let production = (isInitial || modalType === 'initial_ask') ? (modalType === 'initial_ask' && !isInitial ? current : 0) : current - lastCounterValue; if(production < 0) production = 0; await addDoc(collection(db, "logs"), { machineId: activeMachine, partName: partName.toUpperCase().trim(), count: production, totalCounter: current, date: getTodayDate(), timestamp: new Date().toISOString() }); setInputCounter(''); setShowToast(true); setTimeout(()=>setShowToast(false), 2000); } catch(e) { alert("Hata: " + e.message); } };
-            const executeFinish = async (isInitial) => { setShowModal(false); try { const current = parseInt(inputCounter); let production = (isInitial || modalType === 'finish_initial') ? (modalType === 'finish_initial' && !isInitial ? current : 0) : current - lastCounterValue; if(production < 0) production = 0; if (production > 0 || isInitial) { await addDoc(collection(db, "logs"), { machineId: activeMachine, partName: partName.toUpperCase().trim(), count: production, totalCounter: current, type: 'finish', date: getTodayDate(), timestamp: new Date().toISOString() }); } setTimeout(async () => { await addDoc(collection(db, "resets"), { partName: partName.toUpperCase().trim(), resetDate: new Date().toISOString() }); setInputCounter(''); alert("Parti Kapatıldı."); }, 500); } catch(e) { alert("Hata: " + e.message); } };
+            const executeSave = async (isInitial) => { setShowModal(false); try { const current = modalData.current; const machine = modalData.machine; let production = (isInitial || modalType === 'initial_ask') ? (modalType === 'initial_ask' && !isInitial ? current : 0) : current - (modalData.prev || 0); if(production < 0) production = 0; await addDoc(collection(db, "logs"), { machineId: machine, partName: partName.toUpperCase().trim(), count: production, totalCounter: current, date: getTodayDate(), timestamp: new Date().toISOString() }); setLastUsedMachine(machine); setInputCounter(''); setShowToast(true); setTimeout(()=>setShowToast(false), 2000); } catch(e) { alert("Hata: " + e.message); } };
+            const executeFinish = async (isInitial) => { setShowModal(false); try { const current = modalData.current; const machine = modalData.machine; let production = (isInitial || modalType === 'finish_initial') ? (modalType === 'finish_initial' && !isInitial ? current : 0) : current - (modalData.prev || 0); if(production < 0) production = 0; if (production > 0 || isInitial) { await addDoc(collection(db, "logs"), { machineId: machine, partName: partName.toUpperCase().trim(), count: production, totalCounter: current, type: 'finish', date: getTodayDate(), timestamp: new Date().toISOString() }); } setLastUsedMachine(machine); setTimeout(async () => { await addDoc(collection(db, "resets"), { partName: partName.toUpperCase().trim(), resetDate: new Date().toISOString() }); setInputCounter(''); alert("Parti Kapatıldı."); }, 500); } catch(e) { alert("Hata: " + e.message); } };
             
             const handleEditSave = async () => { if(!editLog) return; const parsedCount = parseInt(editLog.count); if(isNaN(parsedCount)) return alert("Geçersiz üretim sayısı."); try { await updateDoc(doc(db, "logs", editLog.id), { machineId: editLog.machineId, count: parsedCount, totalCounter: editLog.totalCounter ? parseInt(editLog.totalCounter) : null, date: editLog.date, partName: editLog.partName.toUpperCase(), type: editLog.type || null }); setShowEditModal(false); setEditLog(null); alert("Güncellendi."); } catch (e) { alert("Hata: " + e.message); } };
             const executeDelete = async () => { setShowModal(false); if(editLog) { await deleteDoc(doc(db, "logs", editLog.id)); setEditLog(null); setShowEditModal(false); } };
@@ -536,6 +557,17 @@
                 
                 showModal && React.createElement("div", {className: "fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 no-print"},
                     React.createElement("div", {className: "bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl text-center animate-fade-in"},
+                         (modalType === 'select_machine') && React.createElement("div", {},
+                             React.createElement("h3", {className: "font-bold mb-1 text-lg"}, "Hangi Makine?"),
+                             React.createElement("p", {className: "mb-4 text-sm text-slate-500"}, `Girilen sayaç: ${modalData.current}`),
+                             React.createElement("div", {className: "space-y-2 mb-2"}, MACHINES.map(m => React.createElement("button", {
+                                 key: m.id,
+                                 onClick: () => selectMachineForSave(m.id),
+                                 className: `w-full py-4 rounded-xl font-bold text-lg border-2 ${lastUsedMachine === m.id ? 'border-slate-800' : 'border-transparent'} ${m.color} text-white`
+                             }, m.id))),
+                             lastUsedMachine && React.createElement("p", {className: "text-[10px] text-slate-400 mb-2"}, "Koyu çerçeveli: son kaydettiğin makine"),
+                             React.createElement("button", {onClick: ()=>setShowModal(false), className: "w-full py-3 bg-slate-100 rounded-xl font-bold text-slate-600"}, "VAZGEÇ")
+                         ),
                          (modalType === 'delete_sale') && React.createElement("div", {}, 
                              React.createElement(IconTrash, {width:48, height:48, className:"mx-auto mb-2 text-red-500"}), 
                              React.createElement("h3", {className:"font-bold mb-2 text-red-600 text-lg uppercase"}, "Satış Silinsin mi?"), 
@@ -586,16 +618,24 @@
 
                 React.createElement("main", {className: "max-w-md mx-auto p-4 space-y-4 no-print"},
                     activeTab === 'entry' && React.createElement("div", {className: "space-y-6"},
-                         React.createElement("div", {className: "grid grid-cols-3 gap-2"}, MACHINES.map(m => React.createElement("button", {key: m.id, onClick: ()=>setActiveMachine(m.id), className: `py-3 rounded-xl border-b-4 ${activeMachine===m.id ? m.color+' text-white' : 'bg-white'}`}, m.id))),
                          React.createElement("div", {className: "bg-white p-5 rounded-2xl shadow-sm border space-y-4"},
                             React.createElement("div", {}, React.createElement("label", {className: "text-xs font-bold text-gray-400"}, "PARÇA"), React.createElement("input", {list: "prods", value: partName, onChange: e=>setPartName(e.target.value), className: "w-full p-3 bg-slate-50 border rounded-xl font-bold uppercase", placeholder: "MİL-1"})),
+                            recentPartNames.length > 0 && React.createElement("div", {className: "flex gap-2 overflow-x-auto pb-1 -mt-2"}, recentPartNames.map(p => React.createElement("button", {
+                                key: p,
+                                onClick: () => setPartName(p),
+                                className: `flex-none px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border ${partName.toUpperCase().trim() === p ? 'bg-slate-800 text-white border-slate-800' : 'bg-slate-50 text-slate-600 border-slate-200'}`
+                            }, p))),
                             partName && React.createElement("div", {className: "grid grid-cols-3 gap-2 text-center bg-slate-50 p-3 rounded-xl"}, React.createElement("div", {}, React.createElement("div", {className:"text-[9px] text-gray-400"}, "BUGÜN"), React.createElement("div", {className:"font-bold"}, stats.daily)), React.createElement("div", {className:"text-blue-600"}, React.createElement("div", {className:"text-[9px]"}, "BU PARTİ"), React.createElement("div", {className:"font-bold text-lg"}, stats.batch)), React.createElement("div", {}, React.createElement("div", {className:"text-[9px] text-gray-400"}, "YIL"), React.createElement("div", {className:"font-bold"}, stats.yearly))),
-                            React.createElement("div", {}, React.createElement("div", {className: "flex justify-between mb-1"}, React.createElement("label", {className: "text-xs font-bold text-gray-400"}, "MAKİNE SAYAÇ (TOPLAM)"), !isFirstRecordOfBatch && React.createElement("span", {className: "text-[10px] font-bold text-blue-600"}, "Önceki: " + lastCounterValue)), React.createElement("input", {type: "number", value: inputCounter, onChange: e=>setInputCounter(e.target.value), className: "w-full p-4 text-4xl font-bold text-center bg-slate-50 border rounded-xl", placeholder: "0", inputMode: "numeric"}), isFirstRecordOfBatch && inputCounter && React.createElement("div", {className: "text-xs text-center mt-2 text-yellow-600 font-bold"}, "Yeni Parti Başlangıcı")),
-                            React.createElement("div", {className: "space-y-4"}, React.createElement("button", {onClick: handleSaveClick, className: `w-full py-4 rounded-xl text-white font-bold text-lg shadow-lg ${mConfig.color}`}, "KAYDET"), React.createElement("button", {onClick: handleFinishClick, className: "w-full py-4 bg-red-600 rounded-xl text-white font-bold text-lg shadow-lg"}, "KAYDET VE BİTİR"))
+                            React.createElement("div", {}, React.createElement("label", {className: "text-xs font-bold text-gray-400"}, "MAKİNE SAYAÇ (TOPLAM)"), React.createElement("input", {type: "number", value: inputCounter, onChange: e=>setInputCounter(e.target.value), className: "w-full p-4 text-4xl font-bold text-center bg-slate-50 border rounded-xl", placeholder: "0", inputMode: "numeric"})),
+                            React.createElement("div", {className: "space-y-4"}, React.createElement("button", {onClick: handleSaveClick, className: "w-full py-4 rounded-xl text-white font-bold text-lg shadow-lg bg-blue-600"}, "KAYDET"), React.createElement("button", {onClick: handleFinishClick, className: "w-full py-4 bg-red-600 rounded-xl text-white font-bold text-lg shadow-lg"}, "KAYDET VE BİTİR"))
                          ),
                          yesterdaySummary.data.length > 0 && React.createElement("div", {className: "space-y-2"}, 
-                             React.createElement("h3", {className: "text-xs font-bold text-slate-400 pl-2"}, `DÜNÜN ÖZETİ (${yesterdaySummary.dateLabel})`), 
-                             yesterdaySummary.data.map((sum, idx) => React.createElement("div", {key: idx, className: `bg-white p-3 rounded-xl border flex justify-between items-center shadow-sm ${sum.isFinished ? 'border-red-300 bg-red-50' : 'border-slate-200'}`}, React.createElement("div", {className: "flex items-center gap-3"}, React.createElement("div", {className: `text-[10px] font-bold text-white px-2 py-1 rounded ${sum.machineColor}`}, sum.machineId), React.createElement("div", {className: "text-sm font-bold text-slate-700"}, sum.partName)), React.createElement("div", {className: "text-right"}, React.createElement("div", {className: "text-sm font-bold text-green-600 flex items-center justify-end gap-1"}, sum.totalProduction + " Adet", sum.isFinished && React.createElement(IconFlag, {className: "text-red-600 w-4 h-4"})), React.createElement("div", {className: "text-sm font-bold text-gray-500"}, "Toplam (Sayaç): " + sum.lastCounter))))
+                             React.createElement("h3", {className: "text-xs font-bold text-slate-400 pl-2"}, `DÜNÜN ÖZETİ (${yesterdaySummary.dateLabel}) · dokun, hızlı doldur`), 
+                             yesterdaySummary.data.map((sum, idx) => React.createElement("div", {
+                                 key: idx,
+                                 onClick: () => { setPartName(sum.partName); setLastUsedMachine(sum.machineId); },
+                                 className: `bg-white p-3 rounded-xl border flex justify-between items-center shadow-sm cursor-pointer active:bg-slate-50 ${sum.isFinished ? 'border-red-300 bg-red-50' : 'border-slate-200'}`
+                             }, React.createElement("div", {className: "flex items-center gap-3"}, React.createElement("div", {className: `text-[10px] font-bold text-white px-2 py-1 rounded ${sum.machineColor}`}, sum.machineId), React.createElement("div", {className: "text-sm font-bold text-slate-700"}, sum.partName)), React.createElement("div", {className: "text-right"}, React.createElement("div", {className: "text-sm font-bold text-green-600 flex items-center justify-end gap-1"}, sum.totalProduction + " Adet", sum.isFinished && React.createElement(IconFlag, {className: "text-red-600 w-4 h-4"})), React.createElement("div", {className: "text-sm font-bold text-gray-500"}, "Toplam (Sayaç): " + sum.lastCounter))))
                          )
                     ),
 
