@@ -54,7 +54,7 @@
             authDomain: "cnc-takip-460b6.firebaseapp.com",
             projectId: "cnc-takip-460b6",
             storageBucket: "cnc-takip-460b6.firebasestorage.app",
-            messagingSenderId: "cnc-takip-460b6.firebasestorage.app",
+            messagingSenderId: "627287710354",
             appId: "1:627287710354:web:4b04d452c51ac793bda44b"
         };
 
@@ -76,13 +76,14 @@
             EUR: { label: 'EUR', symbol: '€' }
         };
 
-        const getTodayDate = () => {
-            const d = new Date();
+        const getDateStr = (d) => {
             const year = d.getFullYear();
             const month = String(d.getMonth() + 1).padStart(2, '0');
             const day = String(d.getDate()).padStart(2, '0');
             return `${year}-${month}-${day}`;
         };
+
+        const getTodayDate = () => getDateStr(new Date());
 
         const getCurrentMonth = () => {
             return getTodayDate().slice(0, 7);
@@ -298,13 +299,16 @@
                 if (!partName) return { daily: 0, batch: 0, yearly: 0 }; 
                 const pNameUpper = partName.toUpperCase().trim(); 
                 const todayStr = getTodayDate(); 
+                const currentYear = String(new Date().getFullYear()); 
                 const resets = batchResets.filter(r => r.partName === pNameUpper).sort((a,b) => new Date(b.resetDate) - new Date(a.resetDate)); 
                 const lastReset = resets.length ? new Date(resets[0].resetDate) : new Date(0); 
-                let s = { daily: 0, batch: 0 }; 
+                let s = { daily: 0, batch: 0, yearly: 0 }; 
                 recentLogs.forEach(l => { 
                     if (l.partName === pNameUpper) { 
-                        if (l.date === todayStr) s.daily += l.count; 
-                        if (new Date(l.timestamp) > lastReset) s.batch += l.count; 
+                        const c = l.count || 0; 
+                        if (l.date === todayStr) s.daily += c; 
+                        if (new Date(l.timestamp) > lastReset) s.batch += c; 
+                        if (l.date && String(l.date).slice(0, 4) === currentYear) s.yearly += c; 
                     } 
                 }); 
                 return s; 
@@ -312,7 +316,7 @@
 
             const yesterdaySummary = useMemo(() => { 
                 const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1); 
-                const yesterdayStr = yesterday.toISOString().split('T')[0]; 
+                const yesterdayStr = getDateStr(yesterday); 
                 const yesterdayFormatted = yesterday.toLocaleDateString('tr-TR');
 
                 const filteredLogs = recentLogs.filter(l => l.date === yesterdayStr); 
@@ -326,12 +330,12 @@
                 if (!showAllTimeSales) {
                     result = result.filter(s => s.date && s.date.startsWith(selectedSalesMonth));
                 }
-                if (searchTerm) result = result.filter(s => s.customer.includes(searchTerm.toUpperCase()));
+                if (searchTerm) result = result.filter(s => (s.customer || '').includes(searchTerm.toUpperCase()));
                 if (productSearchTerm) result = result.filter(s => s.items && s.items.some(i => i.product.includes(productSearchTerm.toUpperCase())));
                 return result;
             }, [sales, searchTerm, productSearchTerm, selectedSalesMonth, showAllTimeSales]);
 
-            const uniqueCustomers = useMemo(() => [...new Set(sales.map(s => s.customer))].sort(), [sales]);
+            const uniqueCustomers = useMemo(() => [...new Set(sales.map(s => s.customer).filter(Boolean))].sort(), [sales]);
             const uniqueSalesProducts = useMemo(() => {
                 const saleProds = sales.flatMap(s => s.items || []).map(i => i.product);
                 return [...new Set(saleProds)].sort();
@@ -351,9 +355,9 @@
                     if (!stats[cur]) stats[cur] = { monthly: 0, yearly: 0 };
                     
                     if (d.getFullYear() === now.getFullYear()) {
-                        stats[cur].yearly += s.grandTotal;
+                        stats[cur].yearly += (s.grandTotal || 0);
                         if (d.getMonth() === now.getMonth()) {
-                            stats[cur].monthly += s.grandTotal;
+                            stats[cur].monthly += (s.grandTotal || 0);
                         }
                     }
                 });
@@ -373,13 +377,13 @@
                         // Müşteri ciro hesaplaması (Döviz bazlı)
                         if (!customerStats[s.customer]) customerStats[s.customer] = {};
                         if (!customerStats[s.customer][cur]) customerStats[s.customer][cur] = 0;
-                        customerStats[s.customer][cur] += s.grandTotal;
+                        customerStats[s.customer][cur] += (s.grandTotal || 0);
 
                         // Ürün adet hesaplaması
                         if (s.items) { 
                             s.items.forEach(item => { 
                                 if (!productStats[item.product]) productStats[item.product] = 0; 
-                                productStats[item.product] += item.count; 
+                                productStats[item.product] += (item.count || 0); 
                             }); 
                         }
                     }
@@ -431,7 +435,7 @@
             };
 
             const handleSaveClick = () => { if(!partName || !inputCounter) return alert("Eksik bilgi!"); const current = parseInt(inputCounter); if(isNaN(current)) return alert("Geçersiz sayı"); if (isFirstRecordOfBatch && current > 0) { setModalType('initial_ask'); setModalData({ current }); setShowModal(true); return; } let production = current - lastCounterValue; if(production < 0) production = 0; setModalType('save'); setModalData({ current, production, prev: lastCounterValue }); setShowModal(true); };
-            const handleFinishClick = () => { if(!partName || !inputCounter) return alert("Eksik bilgi!"); const current = parseInt(inputCounter); let production = current - lastCounterValue; if(isFirstRecordOfBatch && current > 0) { setModalType('finish_initial'); setModalData({ current }); setShowModal(true); return; } setModalType('finish'); setModalData({ current, production, prev: lastCounterValue }); setShowModal(true); };
+            const handleFinishClick = () => { if(!partName || !inputCounter) return alert("Eksik bilgi!"); const current = parseInt(inputCounter); if(isNaN(current)) return alert("Geçersiz sayı"); let production = current - lastCounterValue; if(production < 0) production = 0; if(isFirstRecordOfBatch && current > 0) { setModalType('finish_initial'); setModalData({ current }); setShowModal(true); return; } setModalType('finish'); setModalData({ current, production, prev: lastCounterValue }); setShowModal(true); };
             
             const executeSave = async (isInitial) => { setShowModal(false); try { const current = parseInt(inputCounter); let production = (isInitial || modalType === 'initial_ask') ? (modalType === 'initial_ask' && !isInitial ? current : 0) : current - lastCounterValue; if(production < 0) production = 0; await addDoc(collection(db, "logs"), { machineId: activeMachine, partName: partName.toUpperCase().trim(), count: production, totalCounter: current, date: getTodayDate(), timestamp: new Date().toISOString() }); setInputCounter(''); setShowToast(true); setTimeout(()=>setShowToast(false), 2000); } catch(e) { alert("Hata: " + e.message); } };
             const executeFinish = async (isInitial) => { setShowModal(false); try { const current = parseInt(inputCounter); let production = (isInitial || modalType === 'finish_initial') ? (modalType === 'finish_initial' && !isInitial ? current : 0) : current - lastCounterValue; if(production < 0) production = 0; if (production > 0 || isInitial) { await addDoc(collection(db, "logs"), { machineId: activeMachine, partName: partName.toUpperCase().trim(), count: production, totalCounter: current, type: 'finish', date: getTodayDate(), timestamp: new Date().toISOString() }); } setTimeout(async () => { await addDoc(collection(db, "resets"), { partName: partName.toUpperCase().trim(), resetDate: new Date().toISOString() }); setInputCounter(''); alert("Parti Kapatıldı."); }, 500); } catch(e) { alert("Hata: " + e.message); } };
@@ -643,7 +647,7 @@
                             cart.length > 0 && React.createElement("div", {className: "space-y-2 pt-2"},
                                 cart.map(item => React.createElement("div", {key: item.id, className: "flex justify-between text-xs border-b pb-2"}, 
                                     React.createElement("div", {}, React.createElement("div",{className:"font-bold"},item.product), 
-                                    React.createElement("div",{className:"text-slate-400"},`${item.count} x ${item.price} ${CURRENCIES[item.currency]?.symbol || '₺'}`)), // Güvenli Erişim
+                                    React.createElement("div",{className:"text-slate-400"},`${item.count} x ${item.price} ${CURRENCIES[item.currency]?.symbol || '₺'}`)),
                                     React.createElement("div", {className:"flex gap-2 items-center"}, React.createElement("span",{className:"font-bold"},formatMoney(item.total, item.currency)), React.createElement("button", {onClick:()=>setCart(cart.filter(c=>c.id!==item.id))}, React.createElement(IconClose,{width:14}))))),
                                 
                                 React.createElement("div", {className: "bg-slate-50 p-3 rounded-lg mt-3 text-sm space-y-1 text-right"},
@@ -714,7 +718,6 @@
                         React.createElement("div", {className: "flex justify-between items-center mb-4 border-b pb-2"}, React.createElement("h3", {className: "font-bold text-lg"}, "Yönetim Raporu"), React.createElement("button", {onClick: ()=>setShowReportModal(false), className: "p-2 bg-slate-100 rounded-full"}, React.createElement(IconClose))),
                         React.createElement("div", {className: "overflow-y-auto flex-1 pr-2 space-y-6"},
                             
-                            // GÜNCELLEME: Döviz türlerine göre ayrılmış Ciro Kutuları
                             React.createElement("div", {className: "space-y-2"},
                                 ['TRY', 'USD', 'EUR'].map(cur => {
                                     const stat = salesStats[cur];
@@ -738,7 +741,6 @@
                                 reportData.sortedProducts.length === 0 ? React.createElement("div", {className: "text-gray-400 text-sm"}, "Veri yok") : reportData.sortedProducts.map(([name, qty], i) => React.createElement("div", {key: i, className: "flex justify-between text-sm py-1 border-b border-slate-50"}, React.createElement("span", {}, name), React.createElement("span", {className: "font-bold"}, qty + " Adet")))
                             ),
                             
-                            // GÜNCELLEME: Müşteri listesinde İhracat etiketi ve doğru döviz simgesi
                             React.createElement("div", {},
                                 React.createElement("h4", {className: "text-xs font-bold text-purple-700 uppercase mb-2"}, "Müşteri Ciroları"),
                                 reportData.flatCustomers.length === 0 ? React.createElement("div", {className: "text-gray-400 text-sm"}, "Veri yok") : reportData.flatCustomers.map((c, i) => React.createElement("div", {key: i, className: "flex justify-between items-center text-sm py-1 border-b border-slate-50"}, 
@@ -760,5 +762,3 @@
     </script>
 </body>
 </html>
-
-
