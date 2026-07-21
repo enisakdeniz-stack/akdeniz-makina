@@ -195,7 +195,7 @@
             useEffect(() => {
                 if (!db || !user) return;
                 
-                const qRecent = query(collection(db, "logs"), orderBy("timestamp", "desc"), limit(150));
+                const qRecent = query(collection(db, "logs"), orderBy("timestamp", "desc"), limit(3000));
                 const unsubLogs = onSnapshot(qRecent, (s) => { 
                     setRecentLogs(s.docs.map(d => ({ id: d.id, ...d.data() }))); 
                     setIsLoading(false); 
