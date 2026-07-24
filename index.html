@@ -123,7 +123,7 @@
                 { id: 'A32', name: 'Makina A32', color: 'bg-emerald-600', text:'text-emerald-600', bg:'bg-emerald-50' }
             ];
 
-            const BRANDS = ['AR', 'Interpump', 'Comet', 'Hawk', 'Bertolini', 'STM'];
+
 
             const [user, setUser] = useState(null);
             const [activeTab, setActiveTab] = useState('entry');
@@ -183,11 +183,9 @@
 
             // STATE - FİYAT LİSTESİ
             const [priceList, setPriceList] = useState([]);
-            const [priceBrandFilter, setPriceBrandFilter] = useState('ALL');
             const [priceSearchTerm, setPriceSearchTerm] = useState('');
             const [isPriceFormOpen, setIsPriceFormOpen] = useState(false);
             const [editingPriceId, setEditingPriceId] = useState(null);
-            const [priceBrand, setPriceBrand] = useState('AR');
             const [priceCode, setPriceCode] = useState('');
             const [priceName, setPriceName] = useState('');
             const [priceAmount, setPriceAmount] = useState('');
@@ -219,7 +217,7 @@
 
                 const unsubResets = onSnapshot(query(collection(db, "resets"), orderBy("resetDate", "desc"), limit(50)), (s) => setBatchResets(s.docs.map(d => ({ id: d.id, ...d.data() }))));
                 const unsubSales = onSnapshot(query(collection(db, "sales_demo"), orderBy("timestamp", "desc"), limit(3000)), (s) => setSales(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-                const unsubPrices = onSnapshot(query(collection(db, "price_list"), orderBy("brand", "asc")), (s) => setPriceList(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+                const unsubPrices = onSnapshot(query(collection(db, "price_list"), orderBy("name", "asc")), (s) => setPriceList(s.docs.map(d => ({ id: d.id, ...d.data() }))));
                 
                 return () => { unsubLogs(); unsubResets(); unsubSales(); unsubPrices(); };
             }, [user]);
@@ -360,13 +358,12 @@
 
             const filteredPriceList = useMemo(() => {
                 let result = priceList;
-                if (priceBrandFilter !== 'ALL') result = result.filter(p => p.brand === priceBrandFilter);
                 if (priceSearchTerm) {
                     const term = priceSearchTerm.toUpperCase();
                     result = result.filter(p => (p.name || '').includes(term) || (p.code || '').includes(term));
                 }
                 return result;
-            }, [priceList, priceBrandFilter, priceSearchTerm]);
+            }, [priceList, priceSearchTerm]);
 
             const uniqueCustomers = useMemo(() => [...new Set(sales.map(s => s.customer).filter(Boolean))].sort(), [sales]);
             const uniqueSalesProducts = useMemo(() => {
@@ -556,18 +553,18 @@
             const executeDeleteSale = async () => { setShowModal(false); if(modalData.saleId) { await deleteDoc(doc(db, "sales_demo", modalData.saleId)); setPrintSale(null); setEditingSaleId(null); } };
 
             // FİYAT LİSTESİ İşlemleri
-            const resetPriceForm = () => { setPriceBrand('AR'); setPriceCode(''); setPriceName(''); setPriceAmount(''); setPriceCurrency('TRY'); setPriceCategory(''); setPriceNote(''); setEditingPriceId(null); };
+            const resetPriceForm = () => { setPriceCode(''); setPriceName(''); setPriceAmount(''); setPriceCurrency('TRY'); setPriceCategory(''); setPriceNote(''); setEditingPriceId(null); };
             const handleSavePrice = async () => {
                 if (!priceName || !priceAmount) return alert("Ürün adı ve fiyat zorunlu!");
                 const amount = parseFloat(priceAmount);
                 if (isNaN(amount)) return alert("Geçersiz fiyat");
-                const priceData = { brand: priceBrand, code: priceCode.toUpperCase().trim(), name: priceName.toUpperCase().trim(), price: amount, currency: priceCurrency, category: priceCategory.trim(), note: priceNote.trim(), updatedAt: new Date().toISOString() };
+                const priceData = { code: priceCode.toUpperCase().trim(), name: priceName.toUpperCase().trim(), price: amount, currency: priceCurrency, category: priceCategory.trim(), note: priceNote.trim(), updatedAt: new Date().toISOString() };
                 try {
                     if (editingPriceId) { await updateDoc(doc(db, "price_list", editingPriceId), priceData); } else { await addDoc(collection(db, "price_list"), priceData); }
                     resetPriceForm(); setIsPriceFormOpen(false); alert("Kaydedildi.");
                 } catch (e) { alert("Hata: " + e.message); }
             };
-            const startEditPrice = (item) => { setEditingPriceId(item.id); setPriceBrand(item.brand || 'AR'); setPriceCode(item.code || ''); setPriceName(item.name || ''); setPriceAmount(String(item.price ?? '')); setPriceCurrency(item.currency || 'TRY'); setPriceCategory(item.category || ''); setPriceNote(item.note || ''); setIsPriceFormOpen(true); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+            const startEditPrice = (item) => { setEditingPriceId(item.id); setPriceCode(item.code || ''); setPriceName(item.name || ''); setPriceAmount(String(item.price ?? '')); setPriceCurrency(item.currency || 'TRY'); setPriceCategory(item.category || ''); setPriceNote(item.note || ''); setIsPriceFormOpen(true); window.scrollTo({ top: 0, behavior: 'smooth' }); };
             const askDeletePrice = (id) => { setModalData({ priceId: id }); setModalType('delete_price'); setShowModal(true); };
             const executeDeletePrice = async () => { setShowModal(false); if(modalData.priceId) { await deleteDoc(doc(db, "price_list", modalData.priceId)); } };
 
@@ -823,9 +820,8 @@
                         ),
 
                         isPriceFormOpen && React.createElement("div", {className: "bg-white p-4 rounded-2xl shadow-sm border border-emerald-100 space-y-3 animate-fade-in"},
-                            React.createElement("div", {className: "flex gap-1 flex-wrap"}, BRANDS.map(b => React.createElement("button", {key: b, onClick: () => setPriceBrand(b), className: `px-3 py-1.5 text-xs font-bold rounded-full border ${priceBrand===b ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-500 border-slate-200'}`}, b))),
                             React.createElement("input", {value: priceCode, onChange: e=>setPriceCode(e.target.value), placeholder: "Ürün Kodu", className: "w-full p-2 border rounded-lg font-bold uppercase text-sm"}),
-                            React.createElement("input", {value: priceName, onChange: e=>setPriceName(e.target.value), placeholder: "Ürün Adı", className: "w-full p-2 border rounded-lg font-bold uppercase text-sm"}),
+                            React.createElement("input", {list: "saleProductList", value: priceName, onChange: e=>setPriceName(e.target.value), placeholder: "Ürün Adı (satışlardaki ürünlerden seçebilirsin)", className: "w-full p-2 border rounded-lg font-bold uppercase text-sm"}),
                             React.createElement("div", {className: "flex gap-2"},
                                 React.createElement("input", {type: "number", value: priceAmount, onChange: e=>setPriceAmount(e.target.value), placeholder: "Fiyat", className: "flex-1 p-2 border rounded-lg font-bold text-sm"}),
                                 React.createElement("div", {className: "flex gap-1"}, Object.entries(CURRENCIES).map(([k,v]) => React.createElement("button", {key: k, onClick: ()=>setPriceCurrency(k), className: `px-2 py-1 text-[10px] font-bold rounded border ${priceCurrency===k?'bg-emerald-600 text-white':'bg-white text-slate-400'}`}, v.label)))
@@ -836,10 +832,6 @@
                         ),
 
                         React.createElement("div", {className: "bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-2"},
-                            React.createElement("div", {className: "flex gap-1 flex-wrap"},
-                                React.createElement("button", {onClick: ()=>setPriceBrandFilter('ALL'), className: `px-3 py-1.5 text-xs font-bold rounded-full border ${priceBrandFilter==='ALL' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'}`}, "TÜMÜ"),
-                                BRANDS.map(b => React.createElement("button", {key: b, onClick: ()=>setPriceBrandFilter(b), className: `px-3 py-1.5 text-xs font-bold rounded-full border ${priceBrandFilter===b ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'}`}, b))
-                            ),
                             React.createElement("input", {value: priceSearchTerm, onChange: e=>setPriceSearchTerm(e.target.value), placeholder: "Ürün adı veya kodu ara...", className: "w-full p-2.5 border rounded-xl text-sm font-bold outline-none"})
                         ),
 
@@ -847,10 +839,7 @@
                             filteredPriceList.length === 0 ? React.createElement("div", {className: "text-center p-10 text-slate-400 text-sm italic"}, "Ürün bulunamadı.") :
                             filteredPriceList.map(item => React.createElement("div", {key: item.id, className: "bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center"},
                                 React.createElement("div", {className: "flex-1 min-w-0"},
-                                    React.createElement("div", {className: "flex items-center gap-2"},
-                                        React.createElement("span", {className: "text-[9px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded flex-none"}, item.brand),
-                                        React.createElement("span", {className: "font-bold text-sm truncate"}, item.name)
-                                    ),
+                                    React.createElement("span", {className: "font-bold text-sm truncate"}, item.name),
                                     item.code && React.createElement("div", {className: "text-[10px] text-gray-400 mt-0.5"}, item.code),
                                     item.note && React.createElement("div", {className: "text-[10px] text-emerald-600 mt-0.5"}, item.note)
                                 ),
