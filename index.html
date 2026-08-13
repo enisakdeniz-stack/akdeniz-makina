@@ -550,6 +550,24 @@
             };
 
             const handleAddToCart = () => { if (!product || !count || !price) return alert("Eksik bilgi!"); const numCount = parseFloat(count); const numPrice = parseFloat(price); const subTotal = numCount * numPrice; const kdv = taxIncluded ? subTotal * 0.20 : 0; const newItem = { id: Date.now(), product: product.toUpperCase(), count: numCount, price: numPrice, currency: currency, taxIncluded, total: subTotal + kdv, kdvValue: kdv }; setCart([...cart, newItem]); setProduct(''); setCount(''); setPrice(''); };
+
+            // Fiyatlar sekmesinden dokunarak sepete ekleme: aynı ürün+fiyat zaten sepetteyse adedini artırır
+            const addPriceItemToCart = (item) => {
+                setCart(prevCart => {
+                    const idx = prevCart.findIndex(c => c.product === item.name && c.price === item.price && c.currency === item.currency);
+                    if (idx >= 0) {
+                        const updated = [...prevCart];
+                        const existing = updated[idx];
+                        const newCount = existing.count + 1;
+                        const subTotal = newCount * existing.price;
+                        const kdv = existing.taxIncluded ? subTotal * 0.20 : 0;
+                        updated[idx] = { ...existing, count: newCount, total: subTotal + kdv, kdvValue: kdv };
+                        return updated;
+                    }
+                    const subTotal = item.price;
+                    return [...prevCart, { id: Date.now(), product: item.name, count: 1, price: item.price, currency: item.currency, taxIncluded: false, total: subTotal, kdvValue: 0 }];
+                });
+            };
             const handleSaveSale = async () => { if (!customer || cart.length === 0) return alert("Hata: Sepet boş."); const saleData = { date: salesDate, customer: customer.toUpperCase(), items: cart, subTotal: cartTotals.subTotal, kdvTotal: cartTotals.kdvTotal, grandTotal: cartTotals.grandTotal, currency: cartTotals.currency, timestamp: new Date().toISOString() }; try { if (editingSaleId) { await updateDoc(doc(db, "sales_demo", editingSaleId), saleData); setEditingSaleId(null); } else { await addDoc(collection(db, "sales_demo"), saleData); } setCart([]); setCustomer(''); setIsSalesFormOpen(false); alert("İşlem Başarılı."); } catch (e) { alert("Hata: " + e.message); } };
             const startEditSale = (sale) => { setEditingSaleId(sale.id); setCustomer(sale.customer); setSalesDate(sale.date); setCart(sale.items || []); setIsSalesFormOpen(true); window.scrollTo({ top: 0, behavior: 'smooth' }); };
             
@@ -867,22 +885,38 @@
                             React.createElement("input", {value: priceSearchTerm, onChange: e=>setPriceSearchTerm(e.target.value), placeholder: "Ürün adı veya kodu ara...", className: "w-full p-2.5 border rounded-xl text-sm font-bold outline-none"})
                         ),
 
-                        React.createElement("div", {className: "space-y-2"},
+                        React.createElement("div", {className: "space-y-2 pb-20"},
                             filteredPriceList.length === 0 ? React.createElement("div", {className: "text-center p-10 text-slate-400 text-sm italic"}, "Ürün bulunamadı.") :
-                            filteredPriceList.map(item => React.createElement("div", {key: item.id, className: "bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex justify-between items-start gap-2"},
+                            filteredPriceList.map(item => {
+                                const cartQty = cart.filter(c => c.product === item.name && c.price === item.price && c.currency === item.currency).reduce((sum, c) => sum + c.count, 0);
+                                return React.createElement("div", {key: item.id, onClick: () => addPriceItemToCart(item), className: "bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex justify-between items-start gap-2 cursor-pointer active:bg-slate-50"},
                                 React.createElement("div", {className: "flex-1 min-w-0"},
-                                    React.createElement("div", {className: "font-bold text-sm break-words"}, item.name),
+                                    React.createElement("div", {className: "flex items-center gap-2 flex-wrap"},
+                                        React.createElement("div", {className: "font-bold text-sm break-words"}, item.name),
+                                        cartQty > 0 && React.createElement("span", {className: "text-[10px] font-bold bg-purple-600 text-white px-1.5 py-0.5 rounded-full flex-none"}, `${cartQty} sepette`)
+                                    ),
                                     item.code && React.createElement("div", {className: "text-[10px] text-gray-400 mt-0.5"}, item.code),
-                                    item.note && React.createElement("div", {className: "text-[10px] text-emerald-600 mt-0.5"}, item.note)
+                                    item.note && React.createElement("div", {className: "text-[10px] text-emerald-600 mt-0.5"}, item.note),
+                                    React.createElement("div", {className: "text-[10px] text-purple-500 mt-1"}, "Sepete eklemek için karta dokun")
                                 ),
                                 React.createElement("div", {className: "text-right flex flex-col items-end gap-1 flex-none"},
                                     React.createElement("div", {className: "font-black text-emerald-700 whitespace-nowrap"}, formatMoney(item.price, item.currency)),
                                     React.createElement("div", {className: "flex gap-1"},
-                                        React.createElement("button", {onClick: () => startEditPrice(item), className: "bg-blue-50 text-blue-600 p-1.5 rounded border border-blue-100"}, React.createElement(IconEdit, {width:14})),
-                                        React.createElement("button", {onClick: () => askDeletePrice(item.id), className: "bg-red-50 text-red-600 p-1.5 rounded border border-red-100"}, React.createElement(IconTrash, {width:14}))
+                                        React.createElement("button", {onClick: (e) => { e.stopPropagation(); startEditPrice(item); }, className: "bg-blue-50 text-blue-600 p-1.5 rounded border border-blue-100"}, React.createElement(IconEdit, {width:14})),
+                                        React.createElement("button", {onClick: (e) => { e.stopPropagation(); askDeletePrice(item.id); }, className: "bg-red-50 text-red-600 p-1.5 rounded border border-red-100"}, React.createElement(IconTrash, {width:14}))
                                     )
                                 )
-                            ))
+                            );})
+                        ),
+
+                        cart.length > 0 && React.createElement("div", {className: "fixed bottom-4 left-4 right-4 max-w-md mx-auto z-20"},
+                            React.createElement("button", {
+                                onClick: () => { setActiveTab('sales'); setIsSalesFormOpen(true); },
+                                className: "w-full py-4 bg-purple-700 text-white rounded-2xl font-bold shadow-2xl flex justify-between items-center px-5"
+                            },
+                                React.createElement("span", {}, `🛒 Sepet: ${cart.reduce((s,c)=>s+c.count,0)} adet, ${cart.length} çeşit`),
+                                React.createElement("span", {}, "Satışı Tamamla →")
+                            )
                         )
                     )
                 ),
