@@ -266,6 +266,16 @@
                 return () => unsubPart();
             }, [historySearchTerm, historyMode, user]);
 
+            // Satış formunda ürün adı fiyat listesindeki bir kayıtla eşleşirse fiyat/döviz otomatik dolsun
+            useEffect(() => {
+                if (!product) return;
+                const match = priceList.find(p => (p.name || '').toUpperCase().trim() === product.toUpperCase().trim());
+                if (match) {
+                    setPrice(String(match.price));
+                    setCurrency(match.currency || 'TRY');
+                }
+            }, [product, priceList]);
+
             const formatMoney = (val, cur) => {
                 const currencyInfo = CURRENCIES[cur] || CURRENCIES.TRY; 
                 const symbol = currencyInfo.symbol;
@@ -368,8 +378,9 @@
             const uniqueCustomers = useMemo(() => [...new Set(sales.map(s => s.customer).filter(Boolean))].sort(), [sales]);
             const uniqueSalesProducts = useMemo(() => {
                 const saleProds = sales.flatMap(s => s.items || []).map(i => i.product);
-                return [...new Set(saleProds)].sort();
-            }, [sales]);
+                const priceProds = priceList.map(p => p.name).filter(Boolean);
+                return [...new Set([...saleProds, ...priceProds])].sort();
+            }, [sales, priceList]);
 
             // Aylık ciro geçmişi: her ay için döviz bazlı toplam (rapordaki "Aylık Ciro Geçmişi" bölümü için)
             const monthlyStats = useMemo(() => {
@@ -737,6 +748,7 @@
                             React.createElement("div", {className: "bg-purple-50 p-3 rounded-xl border border-purple-100 space-y-2"},
                                 React.createElement("div", {className: "flex gap-1 mb-1"}, Object.entries(CURRENCIES).map(([k,v]) => React.createElement("button", {key: k, onClick: ()=>setCurrency(k), className: `flex-1 py-1 text-[10px] font-bold rounded border ${currency===k?'bg-purple-600 text-white':'bg-white text-slate-400'}`}, v.label))),
                                 React.createElement("input", {list: "saleProductList", value: product, onChange: e=>setProduct(e.target.value), placeholder: "Ürün Adı", className: "w-full p-2 border rounded-lg font-bold uppercase text-sm"}),
+                                React.createElement("div", {className: "text-[10px] text-purple-500 -mt-1"}, "Fiyat listesindeki bir ürünü seçersen fiyat otomatik dolar"),
                                 React.createElement("div", {className: "flex gap-2"},
                                     React.createElement("input", {type: "number", value: count, onChange: e=>setCount(e.target.value), placeholder: "Adet", className: "w-1/3 p-2 border rounded-lg text-center font-bold text-sm"}),
                                     React.createElement("input", {type: "number", value: price, onChange: e=>setPrice(e.target.value), placeholder: "Fiyat", className: "w-1/3 p-2 border rounded-lg text-center font-bold text-sm"}),
@@ -837,16 +849,18 @@
 
                         React.createElement("div", {className: "space-y-2"},
                             filteredPriceList.length === 0 ? React.createElement("div", {className: "text-center p-10 text-slate-400 text-sm italic"}, "Ürün bulunamadı.") :
-                            filteredPriceList.map(item => React.createElement("div", {key: item.id, className: "bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center"},
+                            filteredPriceList.map(item => React.createElement("div", {key: item.id, className: "bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex justify-between items-start gap-2"},
                                 React.createElement("div", {className: "flex-1 min-w-0"},
-                                    React.createElement("span", {className: "font-bold text-sm truncate"}, item.name),
+                                    React.createElement("div", {className: "font-bold text-sm break-words"}, item.name),
                                     item.code && React.createElement("div", {className: "text-[10px] text-gray-400 mt-0.5"}, item.code),
                                     item.note && React.createElement("div", {className: "text-[10px] text-emerald-600 mt-0.5"}, item.note)
                                 ),
-                                React.createElement("div", {className: "text-right flex items-center gap-2 flex-none"},
+                                React.createElement("div", {className: "text-right flex flex-col items-end gap-1 flex-none"},
                                     React.createElement("div", {className: "font-black text-emerald-700 whitespace-nowrap"}, formatMoney(item.price, item.currency)),
-                                    React.createElement("button", {onClick: () => startEditPrice(item), className: "bg-blue-50 text-blue-600 p-1.5 rounded border border-blue-100"}, React.createElement(IconEdit, {width:14})),
-                                    React.createElement("button", {onClick: () => askDeletePrice(item.id), className: "bg-red-50 text-red-600 p-1.5 rounded border border-red-100"}, React.createElement(IconTrash, {width:14}))
+                                    React.createElement("div", {className: "flex gap-1"},
+                                        React.createElement("button", {onClick: () => startEditPrice(item), className: "bg-blue-50 text-blue-600 p-1.5 rounded border border-blue-100"}, React.createElement(IconEdit, {width:14})),
+                                        React.createElement("button", {onClick: () => askDeletePrice(item.id), className: "bg-red-50 text-red-600 p-1.5 rounded border border-red-100"}, React.createElement(IconTrash, {width:14}))
+                                    )
                                 )
                             ))
                         )
