@@ -193,6 +193,28 @@
             const [priceCategory, setPriceCategory] = useState('');
             const [priceNote, setPriceNote] = useState('');
 
+            // STATE - MALİYET HESAPLAMA
+            const [costRates, setCostRates] = useState([]);
+            const [costRecipes, setCostRecipes] = useState([]);
+            const [costView, setCostView] = useState('recipes'); // 'recipes' | 'rates'
+            const [isImportingExcel, setIsImportingExcel] = useState(false);
+            // Referans fiyat formu
+            const [isRateFormOpen, setIsRateFormOpen] = useState(false);
+            const [editingRateId, setEditingRateId] = useState(null);
+            const [rateCategory, setRateCategory] = useState('hammadde');
+            const [rateName, setRateName] = useState('');
+            const [ratePrice, setRatePrice] = useState('');
+            const [rateUnit, setRateUnit] = useState('TL/KG');
+            // Reçete formu
+            const [expandedRecipeId, setExpandedRecipeId] = useState(null);
+            const [isRecipeFormOpen, setIsRecipeFormOpen] = useState(false);
+            const [editingRecipeId, setEditingRecipeId] = useState(null);
+            const [recipeName, setRecipeName] = useState('');
+            const [recipeMargin, setRecipeMargin] = useState('25');
+            const [recipeItems, setRecipeItems] = useState([]);
+            const [newItemRate, setNewItemRate] = useState('');
+            const [newItemQty, setNewItemQty] = useState('');
+
             // AUTH GİRİŞ
             useEffect(() => {
                 const unsubAuth = onAuthStateChanged(auth, (u) => {
@@ -218,8 +240,10 @@
                 const unsubResets = onSnapshot(query(collection(db, "resets"), orderBy("resetDate", "desc"), limit(50)), (s) => setBatchResets(s.docs.map(d => ({ id: d.id, ...d.data() }))));
                 const unsubSales = onSnapshot(query(collection(db, "sales_demo"), orderBy("timestamp", "desc"), limit(3000)), (s) => setSales(s.docs.map(d => ({ id: d.id, ...d.data() }))));
                 const unsubPrices = onSnapshot(query(collection(db, "price_list"), orderBy("name", "asc")), (s) => setPriceList(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+                const unsubCostRates = onSnapshot(query(collection(db, "cost_rates"), orderBy("name", "asc")), (s) => setCostRates(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+                const unsubCostRecipes = onSnapshot(query(collection(db, "cost_recipes"), orderBy("name", "asc")), (s) => setCostRecipes(s.docs.map(d => ({ id: d.id, ...d.data() }))));
                 
-                return () => { unsubLogs(); unsubResets(); unsubSales(); unsubPrices(); };
+                return () => { unsubLogs(); unsubResets(); unsubSales(); unsubPrices(); unsubCostRates(); unsubCostRecipes(); };
             }, [user]);
 
             // 2. GEÇMİŞ: TARİH BAZLI DİNLEYİCİ
@@ -280,6 +304,30 @@
                 const currencyInfo = CURRENCIES[cur] || CURRENCIES.TRY; 
                 const symbol = currencyInfo.symbol;
                 return (val || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 }) + ' ' + symbol;
+            };
+
+            // Bir reçetenin toplam maliyetini GÜNCEL referans fiyatlarla (costRates) canlı hesaplar.
+            // Birim mantığı: TL/SAAT -> miktar(saniye)/3600, TL/KG -> miktar(gram)/1000, diğerleri (TL/ADET vb.) -> doğrudan çarpım.
+            const computeRecipeCost = (recipe, rates) => {
+                let material = 0, labor = 0, coating = 0, missing = [];
+                (recipe.items || []).forEach(item => {
+                    const rate = rates.find(r => r.name === item.rateName);
+                    if (!rate) { missing.push(item.rateName); return; }
+                    let cost;
+                    if (rate.unit === 'TL/SAAT') cost = (item.quantity * rate.price) / 3600;
+                    else if (rate.unit === 'TL/KG') cost = (item.quantity * rate.price) / 1000;
+                    else cost = item.quantity * rate.price;
+                    if (rate.category === 'hammadde') material += cost;
+                    else if (rate.category === 'iscilik') labor += cost;
+                    else coating += cost;
+                });
+                const totalTL = material + labor + coating;
+                const dolar = rates.find(r => r.name === 'DOLAR');
+                const euro = rates.find(r => r.name === 'EURO');
+                const totalUSD = dolar && dolar.price ? totalTL / dolar.price : 0;
+                const totalEUR = euro && euro.price ? totalTL / euro.price : 0;
+                const margin = (recipe.marginPercent || 0) / 100;
+                return { material, labor, coating, totalTL, totalUSD, totalEUR, suggestedPrice: totalTL * (1 + margin), missing };
             };
 
             const cartTotals = useMemo(() => {
@@ -612,6 +660,62 @@
             const askDeletePrice = (id) => { setModalData({ priceId: id }); setModalType('delete_price'); setShowModal(true); };
             const executeDeletePrice = async () => { setShowModal(false); if(modalData.priceId) { await deleteDoc(doc(db, "price_list", modalData.priceId)); } };
 
+            // MALİYET - Referans Fiyat İşlemleri
+            const resetRateForm = () => { setRateCategory('hammadde'); setRateName(''); setRatePrice(''); setRateUnit('TL/KG'); setEditingRateId(null); };
+            const handleSaveRate = async () => {
+                if (!rateName || !ratePrice) return alert("Ad ve fiyat zorunlu!");
+                const amount = parseFloat(ratePrice);
+                if (isNaN(amount)) return alert("Geçersiz fiyat");
+                const data = { category: rateCategory, name: rateName.toUpperCase().trim(), price: amount, unit: rateUnit };
+                try {
+                    if (editingRateId) { await updateDoc(doc(db, "cost_rates", editingRateId), data); } else { await addDoc(collection(db, "cost_rates"), data); }
+                    resetRateForm(); setIsRateFormOpen(false);
+                } catch (e) { alert("Hata: " + e.message); }
+            };
+            const startEditRate = (rate) => { setEditingRateId(rate.id); setRateCategory(rate.category); setRateName(rate.name); setRatePrice(String(rate.price)); setRateUnit(rate.unit); setIsRateFormOpen(true); };
+            const askDeleteRate = (id) => { setModalData({ rateId: id }); setModalType('delete_rate'); setShowModal(true); };
+            const executeDeleteRate = async () => { setShowModal(false); if(modalData.rateId) { await deleteDoc(doc(db, "cost_rates", modalData.rateId)); } };
+
+            // MALİYET - Reçete İşlemleri
+            const resetRecipeForm = () => { setRecipeName(''); setRecipeMargin('25'); setRecipeItems([]); setEditingRecipeId(null); setNewItemRate(''); setNewItemQty(''); };
+            const addRecipeItemToForm = () => {
+                if (!newItemRate || !newItemQty) return alert("Kalem ve miktar seç!");
+                const qty = parseFloat(newItemQty);
+                if (isNaN(qty)) return alert("Geçersiz miktar");
+                setRecipeItems([...recipeItems, { rateName: newItemRate, quantity: qty }]);
+                setNewItemRate(''); setNewItemQty('');
+            };
+            const removeRecipeItemFromForm = (idx) => setRecipeItems(recipeItems.filter((_, i) => i !== idx));
+            const handleSaveRecipe = async () => {
+                if (!recipeName) return alert("Reçete adı zorunlu!");
+                const margin = parseFloat(recipeMargin);
+                const data = { name: recipeName.toUpperCase().trim(), marginPercent: isNaN(margin) ? 0 : margin, items: recipeItems };
+                try {
+                    if (editingRecipeId) { await updateDoc(doc(db, "cost_recipes", editingRecipeId), data); } else { await addDoc(collection(db, "cost_recipes"), data); }
+                    resetRecipeForm(); setIsRecipeFormOpen(false);
+                } catch (e) { alert("Hata: " + e.message); }
+            };
+            const startEditRecipe = (recipe) => { setEditingRecipeId(recipe.id); setRecipeName(recipe.name); setRecipeMargin(String(recipe.marginPercent ?? 25)); setRecipeItems(recipe.items || []); setIsRecipeFormOpen(true); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+            const askDeleteRecipe = (id) => { setModalData({ recipeId: id }); setModalType('delete_recipe'); setShowModal(true); };
+            const executeDeleteRecipe = async () => { setShowModal(false); if(modalData.recipeId) { await deleteDoc(doc(db, "cost_recipes", modalData.recipeId)); } };
+
+            // MALİYET - Excel şablonundan tek seferlik toplu aktarım (20 referans fiyat + 23 parça reçetesi)
+            const importExcelCostData = async () => {
+                if (!window.confirm("Excel'deki maliyet verisi (referans fiyatlar + 23 parça reçetesi) yüklenecek. Devam edilsin mi?")) return;
+                setIsImportingExcel(true);
+                try {
+                    const rates = [{"category": "kur", "name": "DOLAR", "price": 47.35, "unit": "TL"}, {"category": "kur", "name": "EURO", "price": 53.9, "unit": "TL"}, {"category": "hammadde", "name": "PASLANMAZ", "price": 180.0, "unit": "TL/KG"}, {"category": "hammadde", "name": "BAKIR", "price": 1000.0, "unit": "TL/KG"}, {"category": "hammadde", "name": "PRİNÇ", "price": 550.0, "unit": "TL/KG"}, {"category": "hammadde", "name": "ALÜMİNYUM", "price": 230.0, "unit": "TL/KG"}, {"category": "hammadde", "name": "İMALAT ÇELİĞİ", "price": 85.0, "unit": "TL/KG"}, {"category": "hammadde", "name": "OTOMAT", "price": 85.0, "unit": "TL/KG"}, {"category": "hammadde", "name": "OTOMAT AA", "price": 90.0, "unit": "TL/KG"}, {"category": "hammadde", "name": "430F", "price": 110.0, "unit": "TL/KG"}, {"category": "iscilik", "name": "TORNA T-5(sn)", "price": 650.0, "unit": "TL/SAAT"}, {"category": "iscilik", "name": "TORNA ALFA-25 (sn)", "price": 700.0, "unit": "TL/SAAT"}, {"category": "iscilik", "name": "TORNA ALFA-32 (sn)", "price": 750.0, "unit": "TL/SAAT"}, {"category": "iscilik", "name": "MONTAJ İŞÇİLİK(sn)", "price": 400.0, "unit": "TL/SAAT"}, {"category": "iscilik", "name": "HAVŞA", "price": 1.0, "unit": "TL/ADET"}, {"category": "kaplama", "name": "LAZER MARKALAMA", "price": 20.0, "unit": "TL/KG"}, {"category": "kaplama", "name": "ÇİNKO FOSFAT", "price": 20.0, "unit": "TL/KG"}, {"category": "kaplama", "name": "AKIMSIZ NİKEL", "price": 0, "unit": "TL/ADET"}, {"category": "disKaynak", "name": "O RİNG", "price": 1.0, "unit": "TL/ADET"}, {"category": "disKaynak", "name": "SÜPERPUL", "price": 10.0, "unit": "TL/ADET"}, {"category": "kaplama", "name": "ÇİNKO BEYAZ", "price": 0, "unit": "TL/KG"}];
+                    const recipes = [{"name": "NOZUL GÖVDE", "items": [{"rateName": "TORNA T-5(sn)", "quantity": 0.0}, {"rateName": "HAVŞA", "quantity": 2.0}, {"rateName": "MONTAJ İŞÇİLİK(sn)", "quantity": 30.0}, {"rateName": "TORNA ALFA-25 (sn)", "quantity": 60.0}, {"rateName": "TORNA ALFA-32 (sn)", "quantity": 0.0}, {"rateName": "ÇİNKO BEYAZ", "quantity": 10.0}, {"rateName": "ÇİNKO FOSFAT", "quantity": 0.0}, {"rateName": "OTOMAT", "quantity": 30.0}], "marginPercent": 25}, {"name": "NOZUL ÇEKİRDEK", "items": [{"rateName": "TORNA T-5(sn)", "quantity": 45.0}, {"rateName": "HAVŞA", "quantity": 2.0}, {"rateName": "MONTAJ İŞÇİLİK(sn)", "quantity": 60.0}, {"rateName": "TORNA ALFA-25 (sn)", "quantity": 60.0}, {"rateName": "TORNA ALFA-32 (sn)", "quantity": 0.0}, {"rateName": "LAZER MARKALAMA", "quantity": 0.0}, {"rateName": "ÇİNKO FOSFAT", "quantity": 0.0}, {"rateName": "PASLANMAZ", "quantity": 7.0}], "marginPercent": 25}, {"name": "M20X1 KROM RAKOR", "items": [{"rateName": "TORNA T-5(sn)", "quantity": 0.0}, {"rateName": "HAVŞA", "quantity": 5.0}, {"rateName": "MONTAJ İŞÇİLİK(sn)", "quantity": 0.0}, {"rateName": "TORNA ALFA-25 (sn)", "quantity": 63.0}, {"rateName": "TORNA ALFA-32 (sn)", "quantity": 130.0}, {"rateName": "LAZER MARKALAMA", "quantity": 0.0}, {"rateName": "ÇİNKO FOSFAT", "quantity": 0.0}, {"rateName": "PASLANMAZ", "quantity": 160.0}], "marginPercent": 25}, {"name": "G1/2 KROM RAKOR", "items": [{"rateName": "TORNA T-5(sn)", "quantity": 0.0}, {"rateName": "HAVŞA", "quantity": 5.0}, {"rateName": "MONTAJ İŞÇİLİK(sn)", "quantity": 0.0}, {"rateName": "TORNA ALFA-25 (sn)", "quantity": 10.0}, {"rateName": "TORNA ALFA-32 (sn)", "quantity": 180.0}, {"rateName": "LAZER MARKALAMA", "quantity": 0.0}, {"rateName": "ÇİNKO FOSFAT", "quantity": 0.0}, {"rateName": "PASLANMAZ", "quantity": 200.0}], "marginPercent": 25}, {"name": "G3/8 KROM RAKOR", "items": [{"rateName": "TORNA T-5(sn)", "quantity": 0.0}, {"rateName": "HAVŞA", "quantity": 5.0}, {"rateName": "MONTAJ İŞÇİLİK(sn)", "quantity": 0.0}, {"rateName": "TORNA ALFA-25 (sn)", "quantity": 10.0}, {"rateName": "TORNA ALFA-32 (sn)", "quantity": 160.0}, {"rateName": "LAZER MARKALAMA", "quantity": 0.0}, {"rateName": "ÇİNKO FOSFAT", "quantity": 0.0}, {"rateName": "PASLANMAZ", "quantity": 165.0}], "marginPercent": 25}, {"name": "BY-PASS MİLİ", "items": [{"rateName": "TORNA T-5(sn)", "quantity": 0.0}, {"rateName": "HAVŞA", "quantity": 5.0}, {"rateName": "MONTAJ İŞÇİLİK(sn)", "quantity": 30.0}, {"rateName": "TORNA ALFA-25 (sn)", "quantity": 120.0}, {"rateName": "TORNA ALFA-32 (sn)", "quantity": 30.0}, {"rateName": "LAZER MARKALAMA", "quantity": 0.0}, {"rateName": "ÇİNKO FOSFAT", "quantity": 0.0}, {"rateName": "PASLANMAZ", "quantity": 45.0}], "marginPercent": 25}, {"name": "BY-PASS KEP (ŞAPKA)", "items": [{"rateName": "TORNA T-5(sn)", "quantity": 0.0}, {"rateName": "HAVŞA", "quantity": 10.0}, {"rateName": "MONTAJ İŞÇİLİK(sn)", "quantity": 20.0}, {"rateName": "TORNA ALFA-25 (sn)", "quantity": 105.0}, {"rateName": "TORNA ALFA-32 (sn)", "quantity": 0.0}, {"rateName": "LAZER MARKALAMA", "quantity": 0.0}, {"rateName": "ÇİNKO FOSFAT", "quantity": 0.0}, {"rateName": "PASLANMAZ", "quantity": 30.0}], "marginPercent": 25}, {"name": "BY-PASS GÖVDE", "items": [{"rateName": "TORNA T-5(sn)", "quantity": 150.0}, {"rateName": "HAVŞA", "quantity": 2.0}, {"rateName": "MONTAJ İŞÇİLİK(sn)", "quantity": 550.0}, {"rateName": "TORNA ALFA-25 (sn)", "quantity": 160.0}, {"rateName": "TORNA ALFA-32 (sn)", "quantity": 350.0}, {"rateName": "LAZER MARKALAMA", "quantity": 1.0}, {"rateName": "ÇİNKO FOSFAT", "quantity": 0.0}, {"rateName": "PRİNÇ", "quantity": 900.0}], "marginPercent": 25}, {"name": "BY-PASS KOVAN PARÇA 1", "items": [{"rateName": "TORNA T-5(sn)", "quantity": 0.0}, {"rateName": "HAVŞA", "quantity": 10.0}, {"rateName": "MONTAJ İŞÇİLİK(sn)", "quantity": 20.0}, {"rateName": "TORNA ALFA-25 (sn)", "quantity": 50.0}, {"rateName": "TORNA ALFA-32 (sn)", "quantity": 60.0}, {"rateName": "LAZER MARKALAMA", "quantity": 0.0}, {"rateName": "ÇİNKO FOSFAT", "quantity": 0.0}, {"rateName": "PRİNÇ", "quantity": 210.0}], "marginPercent": 25}, {"name": "BY-PASS KOVAN PARÇA 2", "items": [{"rateName": "TORNA T-5(sn)", "quantity": 0.0}, {"rateName": "HAVŞA", "quantity": 10.0}, {"rateName": "MONTAJ İŞÇİLİK(sn)", "quantity": 20.0}, {"rateName": "TORNA ALFA-25 (sn)", "quantity": 0.0}, {"rateName": "TORNA ALFA-32 (sn)", "quantity": 95.0}, {"rateName": "LAZER MARKALAMA", "quantity": 0.0}, {"rateName": "ÇİNKO FOSFAT", "quantity": 0.0}, {"rateName": "PRİNÇ", "quantity": 172.0}], "marginPercent": 25}, {"name": "SWİTCH RAKORU", "items": [{"rateName": "TORNA T-5(sn)", "quantity": 0.0}, {"rateName": "HAVŞA", "quantity": 5.0}, {"rateName": "MONTAJ İŞÇİLİK(sn)", "quantity": 20.0}, {"rateName": "TORNA ALFA-25 (sn)", "quantity": 50.0}, {"rateName": "TORNA ALFA-32 (sn)", "quantity": 120.0}, {"rateName": "LAZER MARKALAMA", "quantity": 0.0}, {"rateName": "ÇİNKO FOSFAT", "quantity": 0.0}, {"rateName": "PRİNÇ", "quantity": 210.0}], "marginPercent": 25}, {"name": "CİVATALI KOVAN", "items": [{"rateName": "TORNA T-5(sn)", "quantity": 0.0}, {"rateName": "HAVŞA", "quantity": 0.0}, {"rateName": "MONTAJ İŞÇİLİK(sn)", "quantity": 0.0}, {"rateName": "TORNA ALFA-25 (sn)", "quantity": 50.0}, {"rateName": "TORNA ALFA-32 (sn)", "quantity": 50.0}, {"rateName": "LAZER MARKALAMA", "quantity": 0.0}, {"rateName": "ÇİNKO FOSFAT", "quantity": 0.0}, {"rateName": "PRİNÇ", "quantity": 345.0}], "marginPercent": 25}, {"name": "BY-PASS ÇEKİRDEK", "items": [{"rateName": "TORNA T-5(sn)", "quantity": 0.0}, {"rateName": "HAVŞA", "quantity": 5.0}, {"rateName": "MONTAJ İŞÇİLİK(sn)", "quantity": 20.0}, {"rateName": "TORNA ALFA-25 (sn)", "quantity": 150.0}, {"rateName": "TORNA ALFA-32 (sn)", "quantity": 0.0}, {"rateName": "LAZER MARKALAMA", "quantity": 0.0}, {"rateName": "ÇİNKO FOSFAT", "quantity": 0.0}, {"rateName": "PRİNÇ", "quantity": 33.0}], "marginPercent": 25}, {"name": "ÇEKİRDEK RAKORU", "items": [{"rateName": "TORNA T-5(sn)", "quantity": 0.0}, {"rateName": "HAVŞA", "quantity": 0.0}, {"rateName": "MONTAJ İŞÇİLİK(sn)", "quantity": 20.0}, {"rateName": "TORNA ALFA-25 (sn)", "quantity": 50.0}, {"rateName": "TORNA ALFA-32 (sn)", "quantity": 50.0}, {"rateName": "LAZER MARKALAMA", "quantity": 0.0}, {"rateName": "ÇİNKO FOSFAT", "quantity": 0.0}, {"rateName": "PRİNÇ", "quantity": 150.0}], "marginPercent": 25}, {"name": "ÇEKİRDEK RAKORU (KROM)", "items": [{"rateName": "TORNA T-5(sn)", "quantity": 0.0}, {"rateName": "HAVŞA", "quantity": 0.0}, {"rateName": "MONTAJ İŞÇİLİK(sn)", "quantity": 20.0}, {"rateName": "TORNA ALFA-25 (sn)", "quantity": 90.0}, {"rateName": "TORNA ALFA-32 (sn)", "quantity": 90.0}, {"rateName": "LAZER MARKALAMA", "quantity": 0.0}, {"rateName": "ÇİNKO FOSFAT", "quantity": 0.0}, {"rateName": "PASLANMAZ", "quantity": 140.0}], "marginPercent": 25}, {"name": "BY-PASS SARI ALT", "items": [{"rateName": "TORNA T-5(sn)", "quantity": 95.0}, {"rateName": "HAVŞA", "quantity": 1.0}, {"rateName": "MONTAJ İŞÇİLİK(sn)", "quantity": 0.0}, {"rateName": "TORNA ALFA-25 (sn)", "quantity": 50.0}, {"rateName": "TORNA ALFA-32 (sn)", "quantity": 210.0}, {"rateName": "LAZER MARKALAMA", "quantity": 0.0}, {"rateName": "ÇİNKO FOSFAT", "quantity": 0.0}, {"rateName": "PRİNÇ", "quantity": 765.0}], "marginPercent": 25}, {"name": "BY-PASS ALT ALÜMİNYUM", "items": [{"rateName": "TORNA T-5(sn)", "quantity": 95.0}, {"rateName": "HAVŞA", "quantity": 1.0}, {"rateName": "MONTAJ İŞÇİLİK(sn)", "quantity": 0.0}, {"rateName": "TORNA ALFA-25 (sn)", "quantity": 50.0}, {"rateName": "TORNA ALFA-32 (sn)", "quantity": 210.0}, {"rateName": "LAZER MARKALAMA", "quantity": 0.0}, {"rateName": "ÇİNKO FOSFAT", "quantity": 0.0}, {"rateName": "ALÜMİNYUM", "quantity": 240.0}], "marginPercent": 25}, {"name": "AR KEÇE YATAĞI", "items": [{"rateName": "TORNA T-5(sn)", "quantity": 30.0}, {"rateName": "HAVŞA", "quantity": 1.0}, {"rateName": "MONTAJ İŞÇİLİK(sn)", "quantity": 0.0}, {"rateName": "TORNA ALFA-25 (sn)", "quantity": 0.0}, {"rateName": "TORNA ALFA-32 (sn)", "quantity": 420.0}, {"rateName": "LAZER MARKALAMA", "quantity": 0.0}, {"rateName": "ÇİNKO FOSFAT", "quantity": 0.0}, {"rateName": "PRİNÇ", "quantity": 173.0}], "marginPercent": 25}, {"name": "İNTERPUMP KEÇE YATAĞI", "items": [{"rateName": "TORNA T-5(sn)", "quantity": 30.0}, {"rateName": "HAVŞA", "quantity": 2.0}, {"rateName": "MONTAJ İŞÇİLİK(sn)", "quantity": 0.0}, {"rateName": "TORNA ALFA-25 (sn)", "quantity": 0.0}, {"rateName": "TORNA ALFA-32 (sn)", "quantity": 350.0}, {"rateName": "LAZER MARKALAMA", "quantity": 0.0}, {"rateName": "ÇİNKO FOSFAT", "quantity": 0.0}, {"rateName": "PRİNÇ", "quantity": 330.0}], "marginPercent": 25}, {"name": "COMET KEÇE YATAĞI", "items": [{"rateName": "TORNA T-5(sn)", "quantity": 30.0}, {"rateName": "HAVŞA", "quantity": 2.0}, {"rateName": "MONTAJ İŞÇİLİK(sn)", "quantity": 0.0}, {"rateName": "TORNA ALFA-25 (sn)", "quantity": 0.0}, {"rateName": "TORNA ALFA-32 (sn)", "quantity": 350.0}, {"rateName": "LAZER MARKALAMA", "quantity": 0.0}, {"rateName": "ÇİNKO FOSFAT", "quantity": 0.0}, {"rateName": "PRİNÇ", "quantity": 220.0}], "marginPercent": 25}, {"name": "BERTOLİNİ KEÇE YATAĞI", "items": [{"rateName": "TORNA T-5(sn)", "quantity": 30.0}, {"rateName": "HAVŞA", "quantity": 2.0}, {"rateName": "MONTAJ İŞÇİLİK(sn)", "quantity": 0.0}, {"rateName": "TORNA ALFA-25 (sn)", "quantity": 0.0}, {"rateName": "TORNA ALFA-32 (sn)", "quantity": 350.0}, {"rateName": "LAZER MARKALAMA", "quantity": 0.0}, {"rateName": "ÇİNKO FOSFAT", "quantity": 0.0}, {"rateName": "PRİNÇ", "quantity": 170.0}], "marginPercent": 25}, {"name": "İNTERPUMP TAPA", "items": [{"rateName": "TORNA T-5(sn)", "quantity": 30.0}, {"rateName": "HAVŞA", "quantity": 0.0}, {"rateName": "MONTAJ İŞÇİLİK(sn)", "quantity": 20.0}, {"rateName": "TORNA ALFA-25 (sn)", "quantity": 0.0}, {"rateName": "TORNA ALFA-32 (sn)", "quantity": 200.0}, {"rateName": "LAZER MARKALAMA", "quantity": 0.0}, {"rateName": "ÇİNKO FOSFAT", "quantity": 0.0}, {"rateName": "PRİNÇ", "quantity": 220.0}], "marginPercent": 25}, {"name": "AR TAPA", "items": [{"rateName": "TORNA T-5(sn)", "quantity": 0.0}, {"rateName": "HAVŞA", "quantity": 0.0}, {"rateName": "MONTAJ İŞÇİLİK(sn)", "quantity": 20.0}, {"rateName": "TORNA ALFA-25 (sn)", "quantity": 0.0}, {"rateName": "TORNA ALFA-32 (sn)", "quantity": 60.0}, {"rateName": "LAZER MARKALAMA", "quantity": 0.0}, {"rateName": "ÇİNKO FOSFAT", "quantity": 0.0}, {"rateName": "PRİNÇ", "quantity": 100.0}], "marginPercent": 25}];
+                    for (const r of rates) { await addDoc(collection(db, "cost_rates"), r); }
+                    for (const r of recipes) { await addDoc(collection(db, "cost_recipes"), { ...r, marginPercent: 25 }); }
+                    alert("İçe aktarma tamamlandı: " + rates.length + " referans fiyat, " + recipes.length + " parça reçetesi eklendi.");
+                } catch (e) {
+                    alert("İçe aktarma hatası: " + e.message);
+                } finally {
+                    setIsImportingExcel(false);
+                }
+            };
+
             const ReceiptView = () => {
                 if (!printSale) return null;
                 let pSubTotal = printSale.subTotal; let pKdvTotal = printSale.kdvTotal;
@@ -683,6 +787,15 @@
                                 React.createElement("button", {onClick: executeDeletePrice, className: "flex-1 py-3 bg-red-600 text-white rounded-xl font-bold shadow-lg shadow-red-100"}, "EVET, SİL")
                              )
                          ),
+                         (modalType === 'delete_rate' || modalType === 'delete_recipe') && React.createElement("div", {}, 
+                             React.createElement(IconTrash, {width:48, height:48, className:"mx-auto mb-2 text-red-500"}), 
+                             React.createElement("h3", {className:"font-bold mb-2 text-red-600 text-lg uppercase"}, modalType === 'delete_rate' ? "Referans Silinsin mi?" : "Reçete Silinsin mi?"), 
+                             React.createElement("p", {className:"mb-6 text-slate-500"}, "Bu işlem geri alınamaz."), 
+                             React.createElement("div", {className:"flex gap-3"},
+                                React.createElement("button", {onClick: ()=>setShowModal(false), className: "flex-1 py-3 bg-slate-100 rounded-xl font-bold"}, "VAZGEÇ"),
+                                React.createElement("button", {onClick: modalType==='delete_rate' ? executeDeleteRate : executeDeleteRecipe, className: "flex-1 py-3 bg-red-600 text-white rounded-xl font-bold shadow-lg shadow-red-100"}, "EVET, SİL")
+                             )
+                         ),
                          (modalType === 'pick_price_product') && React.createElement("div", {className: "text-left"},
                              React.createElement("h3", {className: "font-bold mb-3 text-center"}, "Fiyat Listesinden Seç"),
                              React.createElement("input", {value: priceSearchTerm, onChange: e=>setPriceSearchTerm(e.target.value), placeholder: "Ürün ara...", className: "w-full p-2.5 border rounded-xl text-sm font-bold outline-none mb-3", autoFocus: true}),
@@ -735,7 +848,8 @@
                         React.createElement("button", {onClick: ()=>setActiveTab('entry'), className: `px-3 py-1 text-xs rounded ${activeTab==='entry'?'bg-slate-600':''}`}, "Giriş"),
                         React.createElement("button", {onClick: ()=>setActiveTab('history'), className: `px-3 py-1 text-xs rounded ${activeTab==='history'?'bg-slate-600':''}`}, "Geçmiş"),
                         React.createElement("button", {onClick: ()=>setActiveTab('sales'), className: `px-3 py-1 text-xs rounded ${activeTab==='sales'?'bg-purple-600 text-white':'text-purple-300'}`}, "Satış"),
-                        React.createElement("button", {onClick: ()=>setActiveTab('prices'), className: `px-3 py-1 text-xs rounded ${activeTab==='prices'?'bg-emerald-600 text-white':'text-emerald-300'}`}, "Fiyatlar")
+                        React.createElement("button", {onClick: ()=>setActiveTab('prices'), className: `px-3 py-1 text-xs rounded ${activeTab==='prices'?'bg-emerald-600 text-white':'text-emerald-300'}`}, "Fiyatlar"),
+                        React.createElement("button", {onClick: ()=>setActiveTab('cost'), className: `px-3 py-1 text-xs rounded ${activeTab==='cost'?'bg-orange-600 text-white':'text-orange-300'}`}, "Maliyet")
                     )
                 ),
 
@@ -931,6 +1045,105 @@
                             },
                                 React.createElement("span", {}, `🛒 Sepet: ${cart.reduce((s,c)=>s+c.count,0)} adet, ${cart.length} çeşit`),
                                 React.createElement("span", {}, "Satışı Tamamla →")
+                            )
+                        )
+                    ),
+
+                    activeTab === 'cost' && React.createElement("div", {className: "space-y-4"},
+                        (costRates.length === 0 && costRecipes.length === 0) && React.createElement("button", {
+                            onClick: importExcelCostData, disabled: isImportingExcel,
+                            className: `w-full py-4 rounded-xl text-white font-bold shadow-lg ${isImportingExcel ? 'bg-orange-300' : 'bg-orange-600 active:bg-orange-700'}`
+                        }, isImportingExcel ? "YÜKLENİYOR..." : "📥 Excel Verisini Yükle (20 referans + 23 reçete)"),
+
+                        React.createElement("div", {className: "flex bg-slate-100 p-1 rounded-lg gap-1"},
+                            React.createElement("button", {onClick: ()=>setCostView('recipes'), className: `flex-1 py-1.5 text-xs font-bold rounded-md ${costView==='recipes'?'bg-white shadow text-slate-800':'text-slate-400'}`}, "REÇETELER"),
+                            React.createElement("button", {onClick: ()=>setCostView('rates'), className: `flex-1 py-1.5 text-xs font-bold rounded-md ${costView==='rates'?'bg-white shadow text-slate-800':'text-slate-400'}`}, "REFERANS FİYATLAR")
+                        ),
+
+                        costView === 'rates' && React.createElement("div", {className: "space-y-3"},
+                            React.createElement("button", {onClick: ()=> { setIsRateFormOpen(!isRateFormOpen); if (isRateFormOpen) resetRateForm(); }, className: `w-full py-2.5 font-bold rounded-xl text-sm ${isRateFormOpen ? 'bg-slate-200' : 'bg-orange-600 text-white'}`}, isRateFormOpen ? "KAPAT" : (editingRateId ? "DÜZENLEMEYİ KAPAT" : "+ YENİ REFERANS")),
+                            isRateFormOpen && React.createElement("div", {className: "bg-white p-4 rounded-2xl shadow-sm border border-orange-100 space-y-2"},
+                                React.createElement("div", {className: "flex gap-1 flex-wrap"}, ['hammadde','iscilik','kaplama','kur','disKaynak'].map(c => React.createElement("button", {key: c, onClick: ()=>setRateCategory(c), className: `px-2.5 py-1 text-[10px] font-bold rounded-full border ${rateCategory===c ? 'bg-orange-600 text-white border-orange-600' : 'bg-white text-slate-500 border-slate-200'}`}, c.toUpperCase()))),
+                                React.createElement("input", {value: rateName, onChange: e=>setRateName(e.target.value), placeholder: "Ad (örn: PASLANMAZ)", className: "w-full p-2 border rounded-lg font-bold uppercase text-sm"}),
+                                React.createElement("div", {className: "flex gap-2"},
+                                    React.createElement("input", {type: "number", value: ratePrice, onChange: e=>setRatePrice(e.target.value), placeholder: "Fiyat", className: "flex-1 p-2 border rounded-lg font-bold text-sm"}),
+                                    React.createElement("select", {value: rateUnit, onChange: e=>setRateUnit(e.target.value), className: "p-2 border rounded-lg text-sm font-bold"},
+                                        ['TL/KG','TL/SAAT','TL/ADET','TL'].map(u => React.createElement("option", {key: u, value: u}, u))
+                                    )
+                                ),
+                                React.createElement("button", {onClick: handleSaveRate, className: "w-full py-2.5 bg-orange-700 text-white font-bold rounded-xl"}, editingRateId ? "GÜNCELLE" : "KAYDET")
+                            ),
+                            ['kur','hammadde','iscilik','kaplama','disKaynak'].map(cat => {
+                                const items = costRates.filter(r => r.category === cat);
+                                if (items.length === 0) return null;
+                                const labels = { kur: 'KUR', hammadde: 'HAMMADDE', iscilik: 'İŞÇİLİK', kaplama: 'KAPLAMA', disKaynak: 'DIŞ KAYNAK' };
+                                return React.createElement("div", {key: cat},
+                                    React.createElement("h4", {className: "text-[10px] font-bold text-slate-400 uppercase mb-1 pl-1"}, labels[cat]),
+                                    React.createElement("div", {className: "space-y-1.5"}, items.map(r => React.createElement("div", {key: r.id, className: "bg-white p-2.5 rounded-lg border border-slate-200 flex justify-between items-center"},
+                                        React.createElement("div", {}, React.createElement("span", {className: "font-bold text-sm"}, r.name), React.createElement("span", {className: "text-[10px] text-slate-400 ml-2"}, r.unit)),
+                                        React.createElement("div", {className: "flex items-center gap-2"},
+                                            React.createElement("span", {className: "font-black text-orange-700 text-sm"}, r.price),
+                                            React.createElement("button", {onClick: () => startEditRate(r), className: "bg-blue-50 text-blue-600 p-1 rounded border border-blue-100"}, React.createElement(IconEdit, {width:12})),
+                                            React.createElement("button", {onClick: () => askDeleteRate(r.id), className: "bg-red-50 text-red-600 p-1 rounded border border-red-100"}, React.createElement(IconTrash, {width:12}))
+                                        )
+                                    )))
+                                );
+                            })
+                        ),
+
+                        costView === 'recipes' && React.createElement("div", {className: "space-y-3"},
+                            React.createElement("button", {onClick: ()=> { setIsRecipeFormOpen(!isRecipeFormOpen); if (isRecipeFormOpen) resetRecipeForm(); }, className: `w-full py-2.5 font-bold rounded-xl text-sm ${isRecipeFormOpen ? 'bg-slate-200' : 'bg-orange-600 text-white'}`}, isRecipeFormOpen ? "KAPAT" : (editingRecipeId ? "DÜZENLEMEYİ KAPAT" : "+ YENİ REÇETE")),
+                            isRecipeFormOpen && React.createElement("div", {className: "bg-white p-4 rounded-2xl shadow-sm border border-orange-100 space-y-2"},
+                                React.createElement("input", {value: recipeName, onChange: e=>setRecipeName(e.target.value), placeholder: "Parça Adı", className: "w-full p-2 border rounded-lg font-bold uppercase text-sm"}),
+                                React.createElement("div", {}, React.createElement("label", {className: "text-[10px] font-bold text-slate-400"}, "HEDEF KÂR ORANI (%)"), React.createElement("input", {type: "number", value: recipeMargin, onChange: e=>setRecipeMargin(e.target.value), className: "w-full p-2 border rounded-lg font-bold text-sm"})),
+                                React.createElement("div", {className: "bg-slate-50 p-2 rounded-lg space-y-1"},
+                                    React.createElement("div", {className: "text-[10px] font-bold text-slate-400"}, "KALEMLER"),
+                                    recipeItems.map((it, idx) => React.createElement("div", {key: idx, className: "flex justify-between items-center bg-white p-1.5 rounded border text-xs"},
+                                        React.createElement("span", {}, `${it.rateName} — ${it.quantity}`),
+                                        React.createElement("button", {onClick: () => removeRecipeItemFromForm(idx)}, React.createElement(IconClose, {width:12}))
+                                    )),
+                                    React.createElement("div", {className: "flex gap-1.5"},
+                                        React.createElement("select", {value: newItemRate, onChange: e=>setNewItemRate(e.target.value), className: "flex-1 p-1.5 border rounded text-xs"},
+                                            React.createElement("option", {value: ""}, "Kalem seç..."),
+                                            costRates.map(r => React.createElement("option", {key: r.id, value: r.name}, `${r.name} (${r.unit})`))
+                                        ),
+                                        React.createElement("input", {type: "number", value: newItemQty, onChange: e=>setNewItemQty(e.target.value), placeholder: "Miktar", className: "w-20 p-1.5 border rounded text-xs"}),
+                                        React.createElement("button", {onClick: addRecipeItemToForm, className: "px-2 bg-orange-100 text-orange-700 rounded text-xs font-bold"}, "Ekle")
+                                    )
+                                ),
+                                React.createElement("button", {onClick: handleSaveRecipe, className: "w-full py-2.5 bg-orange-700 text-white font-bold rounded-xl"}, editingRecipeId ? "GÜNCELLE" : "KAYDET")
+                            ),
+                            React.createElement("div", {className: "space-y-2"},
+                                costRecipes.length === 0 ? React.createElement("div", {className: "text-center p-10 text-slate-400 text-sm italic"}, "Reçete yok.") :
+                                costRecipes.map(recipe => {
+                                    const calc = computeRecipeCost(recipe, costRates);
+                                    const isExpanded = expandedRecipeId === recipe.id;
+                                    return React.createElement("div", {key: recipe.id, className: "bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"},
+                                        React.createElement("div", {onClick: () => setExpandedRecipeId(isExpanded ? null : recipe.id), className: "p-3 cursor-pointer active:bg-slate-50"},
+                                            React.createElement("div", {className: "flex justify-between items-start gap-2"},
+                                                React.createElement("div", {className: "font-bold text-sm flex-1"}, recipe.name),
+                                                React.createElement("div", {className: "text-right"},
+                                                    React.createElement("div", {className: "font-black text-orange-700 whitespace-nowrap"}, formatMoney(calc.totalTL, 'TRY')),
+                                                    React.createElement("div", {className: "text-[10px] text-slate-400"}, `$${calc.totalUSD.toFixed(2)} · €${calc.totalEUR.toFixed(2)}`)
+                                                )
+                                            ),
+                                            React.createElement("div", {className: "text-[11px] text-emerald-600 mt-1"}, `Kâr %${recipe.marginPercent ?? 25} → Önerilen satış: ${formatMoney(calc.suggestedPrice, 'TRY')}`),
+                                            calc.missing.length > 0 && React.createElement("div", {className: "text-[10px] text-red-600 mt-1"}, `⚠️ Referansı bulunamayan kalem: ${calc.missing.join(', ')}`)
+                                        ),
+                                        isExpanded && React.createElement("div", {className: "border-t border-slate-100 p-3 space-y-2 bg-slate-50"},
+                                            (recipe.items || []).map((it, idx) => {
+                                                const rate = costRates.find(r => r.name === it.rateName);
+                                                return React.createElement("div", {key: idx, className: "flex justify-between text-xs text-slate-500"},
+                                                    React.createElement("span", {}, `${it.rateName}: ${it.quantity} ${rate ? '('+rate.unit+')' : '⚠️ bulunamadı'}`)
+                                                );
+                                            }),
+                                            React.createElement("div", {className: "flex gap-2 pt-2"},
+                                                React.createElement("button", {onClick: () => startEditRecipe(recipe), className: "flex-1 py-2 bg-blue-50 text-blue-600 rounded-lg text-xs font-bold border border-blue-100"}, "DÜZENLE"),
+                                                React.createElement("button", {onClick: () => askDeleteRecipe(recipe.id), className: "flex-1 py-2 bg-red-50 text-red-600 rounded-lg text-xs font-bold border border-red-100"}, "SİL")
+                                            )
+                                        )
+                                    );
+                                })
                             )
                         )
                     )
