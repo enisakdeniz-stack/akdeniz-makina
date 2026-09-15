@@ -198,6 +198,7 @@
             const [costRecipes, setCostRecipes] = useState([]);
             const [costView, setCostView] = useState('recipes'); // 'recipes' | 'rates'
             const [isImportingExcel, setIsImportingExcel] = useState(false);
+            const [fxAutoUpdated, setFxAutoUpdated] = useState(false);
             // Referans fiyat formu
             const [isRateFormOpen, setIsRateFormOpen] = useState(false);
             const [editingRateId, setEditingRateId] = useState(null);
@@ -308,6 +309,24 @@
 
             // Bir reçetenin toplam maliyetini GÜNCEL referans fiyatlarla (costRates) canlı hesaplar.
             // Birim mantığı: TL/SAAT -> miktar(saniye)/3600, TL/KG -> miktar(gram)/1000, diğerleri (TL/ADET vb.) -> doğrudan çarpım.
+            // Uygulama açılışında bir kez: DOLAR/EURO kurlarını Frankfurter API'den (ECB/TCMB kaynaklı, ücretsiz) canlı çeker
+            useEffect(() => {
+                if (fxAutoUpdated || costRates.length === 0) return;
+                const dolarRate = costRates.find(r => r.name === 'DOLAR' && r.category === 'kur');
+                const euroRate = costRates.find(r => r.name === 'EURO' && r.category === 'kur');
+                if (!dolarRate || !euroRate) { setFxAutoUpdated(true); return; }
+                setFxAutoUpdated(true);
+                Promise.all([
+                    fetch('https://api.frankfurter.dev/v1/latest?from=USD&to=TRY').then(r => r.json()),
+                    fetch('https://api.frankfurter.dev/v1/latest?from=EUR&to=TRY').then(r => r.json())
+                ]).then(([usdData, eurData]) => {
+                    const usdTry = usdData && usdData.rates && usdData.rates.TRY;
+                    const eurTry = eurData && eurData.rates && eurData.rates.TRY;
+                    if (usdTry) updateDoc(doc(db, "cost_rates", dolarRate.id), { price: Math.round(usdTry * 100) / 100 });
+                    if (eurTry) updateDoc(doc(db, "cost_rates", euroRate.id), { price: Math.round(eurTry * 100) / 100 });
+                }).catch((e) => console.log("Kur güncellenemedi (internet/API sorunu olabilir):", e));
+            }, [costRates, fxAutoUpdated]);
+
             const computeRecipeCost = (recipe, rates) => {
                 let material = 0, labor = 0, coating = 0, missing = [];
                 (recipe.items || []).forEach(item => {
@@ -842,14 +861,17 @@
 
                 showEditModal && editLog && React.createElement("div", {className: "fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 no-print"}, React.createElement("div", {className: "bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden"}, React.createElement("div", {className: "bg-slate-100 p-4 border-b flex justify-between items-center"}, React.createElement("h3", {className: "font-bold"}, "Kaydı Düzenle"), React.createElement("button", {onClick: () => setShowEditModal(false)}, React.createElement(IconClose))), React.createElement("div", {className: "p-6 space-y-4"}, React.createElement("div", {}, React.createElement("label", {className: "text-xs font-bold text-gray-400"}, "MAKİNE"), React.createElement("div", {className: "grid grid-cols-3 gap-2 mt-1"}, MACHINES.map(m => React.createElement("button", {key: m.id, onClick: () => setEditLog({...editLog, machineId: m.id}), className: `p-2 rounded-lg text-xs font-bold border ${editLog.machineId === m.id ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-gray-500 border-gray-200'}`}, m.id)))), React.createElement("div", {}, React.createElement("label", {className: "text-xs font-bold text-gray-400"}, "MAKİNE SAYACI (Total)"), React.createElement("input", {type: "number", value: editLog.totalCounter || '', onChange: (e) => setEditLog({...editLog, totalCounter: e.target.value}), className: "w-full p-3 border rounded-xl font-bold text-lg bg-yellow-50"})), React.createElement("div", {}, React.createElement("label", {className: "text-xs font-bold text-gray-400"}, "ÜRETİM (Fark)"), React.createElement("input", {type: "number", value: editLog.count, onChange: (e) => setEditLog({...editLog, count: e.target.value}), className: "w-full p-3 border rounded-xl font-bold text-lg"})), React.createElement("div", {}, React.createElement("label", {className: "text-xs font-bold text-gray-400"}, "TARİH"), React.createElement("input", {type: "date", value: editLog.date, onChange: (e) => setEditLog({...editLog, date: e.target.value}), className: "w-full p-3 border rounded-xl"})), React.createElement("div", {className: "flex items-center gap-3 p-3 bg-red-50 rounded-xl border border-red-100"}, React.createElement("input", {type: "checkbox", checked: editLog.type === 'finish', onChange: (e) => setEditLog({...editLog, type: e.target.checked ? 'finish' : null}), className: "w-5 h-5 accent-red-600"}), React.createElement("label", {className: "text-sm font-bold text-red-700"}, "Bu Bitiş Kaydıdır (Bayrak Ekle)"))), React.createElement("div", {className: "p-4 bg-slate-50 border-t flex gap-3"}, React.createElement("button", {onClick: ()=>setModalType('delete')||setShowModal(true), className: "flex-1 py-3 bg-red-100 text-red-600 rounded-xl font-bold"}, "SİL"), React.createElement("button", {onClick: handleEditSave, className: "flex-[2] py-3 bg-blue-600 text-white rounded-xl font-bold"}, "GÜNCELLE")))),
 
-                React.createElement("div", {className: "bg-slate-900 text-white p-4 flex justify-between items-center sticky top-0 z-10 no-print"},
-                    React.createElement("h1", {className: "font-bold flex gap-2 items-center"}, React.createElement("img", {src: LOGO_LINKI, className: "w-8 h-8 rounded-full bg-white"}), " Akdeniz Takip "),
-                    React.createElement("div", {className: "bg-slate-800 rounded p-1 flex gap-1"},
-                        React.createElement("button", {onClick: ()=>setActiveTab('entry'), className: `px-3 py-1 text-xs rounded ${activeTab==='entry'?'bg-slate-600':''}`}, "Giriş"),
-                        React.createElement("button", {onClick: ()=>setActiveTab('history'), className: `px-3 py-1 text-xs rounded ${activeTab==='history'?'bg-slate-600':''}`}, "Geçmiş"),
-                        React.createElement("button", {onClick: ()=>setActiveTab('sales'), className: `px-3 py-1 text-xs rounded ${activeTab==='sales'?'bg-purple-600 text-white':'text-purple-300'}`}, "Satış"),
-                        React.createElement("button", {onClick: ()=>setActiveTab('prices'), className: `px-3 py-1 text-xs rounded ${activeTab==='prices'?'bg-emerald-600 text-white':'text-emerald-300'}`}, "Fiyatlar"),
-                        React.createElement("button", {onClick: ()=>setActiveTab('cost'), className: `px-3 py-1 text-xs rounded ${activeTab==='cost'?'bg-orange-600 text-white':'text-orange-300'}`}, "Maliyet")
+                React.createElement("div", {className: "bg-slate-900 text-white sticky top-0 z-10 no-print safe-pt"},
+                    React.createElement("div", {className: "px-4 pt-3 pb-2 flex items-center gap-2"},
+                        React.createElement("img", {src: LOGO_LINKI, className: "w-7 h-7 rounded-full bg-white flex-none"}),
+                        React.createElement("h1", {className: "font-bold text-base"}, "Akdeniz Takip")
+                    ),
+                    React.createElement("div", {className: "flex gap-1 px-4 pb-2.5 overflow-x-auto"},
+                        React.createElement("button", {onClick: ()=>setActiveTab('entry'), className: `flex-none whitespace-nowrap px-3 py-1.5 text-xs font-bold rounded ${activeTab==='entry'?'bg-slate-600':'text-slate-300'}`}, "Giriş"),
+                        React.createElement("button", {onClick: ()=>setActiveTab('history'), className: `flex-none whitespace-nowrap px-3 py-1.5 text-xs font-bold rounded ${activeTab==='history'?'bg-slate-600':'text-slate-300'}`}, "Geçmiş"),
+                        React.createElement("button", {onClick: ()=>setActiveTab('sales'), className: `flex-none whitespace-nowrap px-3 py-1.5 text-xs font-bold rounded ${activeTab==='sales'?'bg-purple-600 text-white':'text-purple-300'}`}, "Satış"),
+                        React.createElement("button", {onClick: ()=>setActiveTab('prices'), className: `flex-none whitespace-nowrap px-3 py-1.5 text-xs font-bold rounded ${activeTab==='prices'?'bg-emerald-600 text-white':'text-emerald-300'}`}, "Fiyatlar"),
+                        React.createElement("button", {onClick: ()=>setActiveTab('cost'), className: `flex-none whitespace-nowrap px-3 py-1.5 text-xs font-bold rounded ${activeTab==='cost'?'bg-orange-600 text-white':'text-orange-300'}`}, "Maliyet")
                     )
                 ),
 
