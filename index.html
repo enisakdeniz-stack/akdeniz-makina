@@ -48,7 +48,7 @@
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, doc, updateDoc, deleteDoc, limit, where, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        const { useState, useEffect, useMemo } = React;
+        const { useState, useEffect, useMemo, useRef } = React;
         const { flushSync } = ReactDOM;
 
         const firebaseConfig = {
@@ -219,6 +219,28 @@
             const [recipeItems, setRecipeItems] = useState([]);
             const [newItemRate, setNewItemRate] = useState('');
             const [newItemQty, setNewItemQty] = useState('');
+
+            // BUGÜNÜN TARİHİ - iPhone ana ekran uygulaması günlerce arka planda donmuş kalıp geri gelebiliyor.
+            // "Bugün/dün" bir kez hesaplanıp kalmasın diye: uygulama öne geldiğinde ve dakikada bir gün kontrol edilir.
+            const [today, setToday] = useState(getTodayDate());
+            useEffect(() => {
+                const check = () => { const t = getTodayDate(); setToday(prev => prev === t ? prev : t); };
+                const iv = setInterval(check, 60000);
+                document.addEventListener('visibilitychange', check);
+                window.addEventListener('focus', check);
+                window.addEventListener('pageshow', check);
+                return () => { clearInterval(iv); document.removeEventListener('visibilitychange', check); window.removeEventListener('focus', check); window.removeEventListener('pageshow', check); };
+            }, []);
+            // Gün değişince, kullanıcının elle değiştirmediği tarih alanlarını da yeni güne taşı
+            const prevTodayRef = useRef(today);
+            useEffect(() => {
+                const prev = prevTodayRef.current;
+                if (prev === today) return;
+                setSelectedHistoryDate(d => d === prev ? today : d);
+                setSalesDate(d => d === prev ? today : d);
+                setSelectedSalesMonth(m => m === prev.slice(0, 7) ? today.slice(0, 7) : m);
+                prevTodayRef.current = today;
+            }, [today]);
 
             // AUTH GİRİŞ
             useEffect(() => {
@@ -417,7 +439,7 @@
             const stats = useMemo(() => { 
                 if (!partName) return { daily: 0, batch: 0, yearly: 0 }; 
                 const pNameUpper = partName.toUpperCase().trim(); 
-                const todayStr = getTodayDate(); 
+                const todayStr = today;
                 const currentYear = String(new Date().getFullYear()); 
                 const resets = batchResets.filter(r => r.partName === pNameUpper).sort((a,b) => new Date(b.resetDate) - new Date(a.resetDate)); 
                 const lastReset = resets.length ? new Date(resets[0].resetDate) : new Date(0); 
@@ -431,10 +453,10 @@
                     } 
                 }); 
                 return s; 
-            }, [recentLogs, batchResets, partName]);
+            }, [recentLogs, batchResets, partName, today]);
 
             const yesterdaySummary = useMemo(() => { 
-                const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1); 
+                const yesterday = new Date(today + 'T00:00:00'); yesterday.setDate(yesterday.getDate() - 1);
                 const yesterdayStr = getDateStr(yesterday); 
                 const yesterdayFormatted = yesterday.toLocaleDateString('tr-TR');
 
@@ -442,7 +464,7 @@
                 const summary = filteredLogs.reduce((acc, log) => { const key = `${log.machineId}-${log.partName}`; if (!acc[key]) acc[key] = { machineId: log.machineId, partName: log.partName, totalProduction: 0, lastCounter: 0, timestamp: log.timestamp, isFinished: false, machineColor: MACHINES.find(m => m.id === log.machineId)?.color || 'bg-gray-500' }; acc[key].totalProduction += log.count; if (new Date(log.timestamp) >= new Date(acc[key].timestamp)) { acc[key].lastCounter = log.totalCounter; acc[key].timestamp = log.timestamp; if (log.type === 'finish') acc[key].isFinished = true; } return acc; }, {}); 
                 
                 return { data: Object.values(summary), dateLabel: yesterdayFormatted }; 
-            }, [recentLogs, MACHINES]);
+            }, [recentLogs, today]);
 
             const filteredSales = useMemo(() => {
                 let result = sales;
@@ -504,7 +526,7 @@
                     }
                 });
                 return stats;
-            }, [sales]);
+            }, [sales, today]);
 
             // GÜNCELLEME: Müşteri cirolarını döviz türüne göre ayırdık
             const reportData = useMemo(() => {
@@ -544,7 +566,7 @@
                 flatCustomers.sort((a,b) => b.total - a.total);
 
                 return { sortedProducts, flatCustomers };
-            }, [sales]);
+            }, [sales, today]);
 
             
             const handleDownloadPdf = () => {
