@@ -279,10 +279,11 @@
                 
                 setIsHistoryLoading(true);
                 setHistoryError('');
-                const qHistory = query(collection(db, "logs"), where("date", "==", selectedHistoryDate), orderBy("timestamp", "desc"));
+                // Not: tek alanlı eşitlik sorgusu Firebase'de ek dizin (index) gerektirmez; sıralama uygulama içinde yapılır
+                const qHistory = query(collection(db, "logs"), where("date", "==", selectedHistoryDate));
 
                 const unsubHistory = onSnapshot(qHistory, (s) => {
-                    setHistoryLogs(s.docs.map(d => ({ id: d.id, ...d.data() })));
+                    setHistoryLogs(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || ''))));
                     setIsHistoryLoading(false);
                 }, (error) => {
                     console.error("Geçmiş hatası:", error);
@@ -305,14 +306,12 @@
                 setIsHistoryLoading(true);
                 setHistoryError('');
                 const qPart = query(
-                    collection(db, "logs"), 
-                    where("partName", "==", historySearchTerm.toUpperCase().trim()), 
-                    orderBy("timestamp", "desc"), 
-                    limit(50)
+                    collection(db, "logs"),
+                    where("partName", "==", historySearchTerm.toUpperCase().trim())
                 );
-                
+
                 const unsubPart = onSnapshot(qPart, (s) => {
-                    setPartHistoryLogs(s.docs.map(d => ({ id: d.id, ...d.data() })));
+                    setPartHistoryLogs(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || ''))).slice(0, 50));
                     setIsHistoryLoading(false);
                 }, (error) => {
                     console.error("Parça geçmişi hatası:", error);
