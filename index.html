@@ -155,9 +155,9 @@
             }
             if (!logoOk) { doc.setTextColor(255); doc.setFont(F, 'bold'); doc.setFontSize(18); doc.text(T("AKDENİZ MAKİNA"), M, 20); }
             doc.setTextColor(255); doc.setFont(F, 'bold'); doc.setFontSize(12);
-            doc.text(T("TESLİM FİŞİ / FATURA"), PW - M, 14, { align: 'right' });
+            doc.text(T("PROFORMA FATURA"), PW - M, 14, { align: 'right' });
             doc.setFont(F, 'normal'); doc.setFontSize(8.5); doc.setTextColor(235);
-            doc.text(T(`Fiş No: ${receiptNo(sale.timestamp)}`), PW - M, 21, { align: 'right' });
+            doc.text(T(`Proforma No: ${receiptNo(sale.timestamp)}`), PW - M, 21, { align: 'right' });
             doc.text(T(`Tarih: ${receiptDate(sale.date)}`), PW - M, 26, { align: 'right' });
 
             // --- Müşteri ---
@@ -193,6 +193,8 @@
             doc.setFillColor(0, 0, 0); doc.rect(lx - 3, y + 9, rx - lx + 3, 10, 'F');
             doc.setTextColor(255); doc.setFont(F, 'bold'); doc.setFontSize(9); doc.text(T("GENEL TOPLAM"), lx, y + 15.5);
             doc.setFontSize(11.5); doc.text(pdfMoney(calc.grandTotal, calc.currency), rx - 3, y + 15.8, { align: 'right' });
+            doc.setTextColor(110); doc.setFont(F, 'normal'); doc.setFontSize(7.5);
+            doc.text(T("Bu belge proforma niteliğindedir; mali değeri olan fatura yerine geçmez."), M, y + 1, { maxWidth: 62 });
             y += 19;
 
             // --- İmza alanları ---
@@ -201,7 +203,7 @@
             doc.setDrawColor(150); doc.setLineWidth(0.2);
             doc.line(M + 4, sy, M + 54, sy); doc.line(PW - M - 54, sy, PW - M - 4, sy);
             doc.setTextColor(110); doc.setFont(F, 'normal'); doc.setFontSize(8);
-            doc.text(T("Teslim Eden"), M + 29, sy + 4.5, { align: 'center' }); doc.text(T("Teslim Alan"), PW - M - 29, sy + 4.5, { align: 'center' });
+            doc.text(T("Düzenleyen"), M + 29, sy + 4.5, { align: 'center' }); doc.text(T("Müşteri Onayı"), PW - M - 29, sy + 4.5, { align: 'center' });
 
             // --- Alt bilgi (her sayfada) ---
             const pages = doc.getNumberOfPages();
@@ -691,7 +693,7 @@
                 if(!window.jspdf) { alert("PDF motoru yüklenemedi."); return; }
                 try {
                     const doc = buildReceiptPdf(window.jspdf.jsPDF, printSale);
-                    doc.save(`fis-${receiptNo(printSale.timestamp)}.pdf`);
+                    doc.save(`proforma-${receiptNo(printSale.timestamp)}.pdf`);
                 } catch (e) { alert("PDF oluşturulamadı: " + e.message); }
             };
 
@@ -892,8 +894,8 @@
                         E("div", {className: "text-white px-5 py-4 flex items-center justify-between gap-3", style: {...printFix, background: "linear-gradient(90deg, #000 0%, #000 48%, #696969 100%)"}},
                             A.logo ? E("img", {src: A.logo, alt: "Akdeniz Makina", className: "h-16 w-auto flex-none"}) : E("h1", {className: "text-xl font-bold"}, "AKDENİZ MAKİNA"),
                             E("div", {className: "text-right"},
-                                E("div", {className: "font-bold text-sm leading-tight"}, "TESLİM FİŞİ / FATURA"),
-                                E("div", {className: "text-xs text-gray-100 mt-2"}, "Fiş No: " + receiptNo(printSale.timestamp)),
+                                E("div", {className: "font-bold text-sm leading-tight"}, "PROFORMA FATURA"),
+                                E("div", {className: "text-xs text-gray-100 mt-2"}, "Proforma No: " + receiptNo(printSale.timestamp)),
                                 E("div", {className: "text-xs text-gray-100"}, "Tarih: " + receiptDate(printSale.date))
                             )
                         ),
@@ -915,9 +917,10 @@
                                     E("div", {className: "flex justify-between items-center bg-black text-white font-bold px-3 py-2 mt-3", style: printFix}, E("span", {className: "text-xs"}, "GENEL TOPLAM"), E("span", {className: "text-lg"}, formatMoney(calc.grandTotal, cur)))
                                 )
                             ),
-                            E("div", {className: "flex justify-between mt-14 text-xs text-gray-500 px-2"},
-                                E("div", {className: "w-2/5 text-center border-t border-gray-400 pt-1"}, "Teslim Eden"),
-                                E("div", {className: "w-2/5 text-center border-t border-gray-400 pt-1"}, "Teslim Alan")
+                            E("div", {className: "mt-4 text-[11px] text-gray-500"}, "Bu belge proforma niteliğindedir; mali değeri olan fatura yerine geçmez."),
+                            E("div", {className: "flex justify-between mt-12 text-xs text-gray-500 px-2"},
+                                E("div", {className: "w-2/5 text-center border-t border-gray-400 pt-1"}, "Düzenleyen"),
+                                E("div", {className: "w-2/5 text-center border-t border-gray-400 pt-1"}, "Müşteri Onayı")
                             ),
                             E("div", {className: "mt-8 pt-3 border-t-2 border-black text-center text-xs text-gray-500"},
                                 E("div", {}, "Bizi tercih ettiğiniz için teşekkür ederiz."),
