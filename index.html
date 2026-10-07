@@ -21,6 +21,7 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     
     <!-- PDF Kütüphaneleri -->
+    <script src="pdf-assets.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
 
@@ -102,6 +103,119 @@
                 .replace(/Ç/g, "C").replace(/ç/g, "c")
                 .replace(/₺/g, "TL");
         };
+
+        // ===== FIŞ / PDF YARDIMCILARI =====
+        // Firma bilgileri (fiş altında görünür). Boş bırakılanlar basılmaz; adres/telefon/vergi bilgisi eklemek için doldurun.
+        const COMPANY = { web: "www.akdenizmkn.com", address: "", phone: "", taxInfo: "" };
+
+        // PDF_BEGIN
+        const receiptNo = (ts) => {
+            const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(ts || '');
+            return m ? `${m[1].slice(2)}${m[2]}${m[3]}-${m[4]}${m[5]}` : String(ts || '').slice(-6);
+        };
+        const receiptDate = (d) => new Date(d).toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        const receiptCalc = (sale) => {
+            const lines = (sale.items || []).map(it => {
+                const base = (it.count || 0) * (it.price || 0);
+                const kdv = it.kdvValue || 0;
+                const rate = base > 0 && kdv > 0 ? Math.round(kdv / base * 100) : 0;
+                return { product: it.product, count: it.count, price: it.price, currency: it.currency || sale.currency || 'TRY', base, kdv, rate, total: it.total !== undefined ? it.total : base + kdv };
+            });
+            const subTotal = sale.subTotal !== undefined ? sale.subTotal : lines.reduce((s, l) => s + l.base, 0);
+            const kdvTotal = sale.kdvTotal !== undefined ? sale.kdvTotal : lines.reduce((s, l) => s + l.kdv, 0);
+            const grandTotal = sale.grandTotal !== undefined ? sale.grandTotal : subTotal + kdvTotal;
+            const rates = [...new Set(lines.filter(l => l.kdv > 0).map(l => l.rate))];
+            return { lines, subTotal, kdvTotal, grandTotal, currency: sale.currency || 'TRY', kdvLabel: rates.length === 1 ? `KDV (%${rates[0]})` : 'KDV Toplamı' };
+        };
+        const pdfMoney = (v, cur) => (v || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ' + (CURRENCIES[cur] || CURRENCIES.TRY).label;
+
+        const buildReceiptPdf = (JsPDF, sale) => {
+            const A = window.PDF_ASSETS || {};
+            const doc = new JsPDF({ orientation: 'p', unit: 'mm', format: 'a5' });
+            const PW = 148, PH = 210, M = 8;
+            // Türkçe karakterli font (yüklenemezse standart font + harf dönüşümüne düşer)
+            let F = 'helvetica', fontOk = false;
+            try {
+                if (A.fontRegular && A.fontBold) {
+                    doc.addFileToVFS('LS-Regular.ttf', A.fontRegular); doc.addFont('LS-Regular.ttf', 'LS', 'normal');
+                    doc.addFileToVFS('LS-Bold.ttf', A.fontBold); doc.addFont('LS-Bold.ttf', 'LS', 'bold');
+                    F = 'LS'; fontOk = true;
+                }
+            } catch (e) { F = 'helvetica'; fontOk = false; }
+            const T = (s) => fontOk ? String(s == null ? '' : s) : trToEn(String(s == null ? '' : s));
+            const calc = receiptCalc(sale);
+
+            // --- Siyah başlık bandı + logo ---
+            doc.setFillColor(0, 0, 0); doc.rect(0, 0, PW, 34, 'F');
+            let logoOk = false;
+            if (A.logo) {
+                try { const lh = 26, lw = lh * (A.logoW || 760) / (A.logoH || 434); doc.addImage(A.logo, 'JPEG', M, 4, lw, lh); logoOk = true; } catch (e) { logoOk = false; }
+            }
+            if (!logoOk) { doc.setTextColor(255); doc.setFont(F, 'bold'); doc.setFontSize(18); doc.text(T("AKDENİZ MAKİNA"), M, 20); }
+            doc.setTextColor(255); doc.setFont(F, 'bold'); doc.setFontSize(12);
+            doc.text(T("TESLİM FİŞİ / FATURA"), PW - M, 14, { align: 'right' });
+            doc.setFont(F, 'normal'); doc.setFontSize(8.5); doc.setTextColor(200);
+            doc.text(T(`Fiş No: ${receiptNo(sale.timestamp)}`), PW - M, 21, { align: 'right' });
+            doc.text(T(`Tarih: ${receiptDate(sale.date)}`), PW - M, 26, { align: 'right' });
+
+            // --- Müşteri ---
+            doc.setTextColor(120); doc.setFont(F, 'normal'); doc.setFontSize(7.5); doc.text(T("SAYIN"), M, 42);
+            doc.setTextColor(0); doc.setFont(F, 'bold'); doc.setFontSize(12);
+            doc.text(T(String(sale.customer || '').toUpperCase()), M, 48.5, { maxWidth: PW - 2 * M });
+
+            // --- Kalem tablosu (KDV sütunlarıyla) ---
+            const body = calc.lines.map(l => [
+                T(l.product), String(l.count),
+                pdfMoney(l.price, l.currency),
+                l.rate > 0 ? `%${l.rate}` : '%0',
+                l.kdv > 0 ? pdfMoney(l.kdv, l.currency) : '-',
+                pdfMoney(l.total, l.currency)
+            ]);
+            doc.autoTable({
+                head: [[T("Ürün"), T("Mik."), T("Birim Fiyat"), T("KDV %"), T("KDV Tutarı"), T("Toplam")]],
+                body, startY: 54, theme: 'grid', margin: { left: M, right: M, bottom: 24 },
+                styles: { font: F, fontSize: 8.5, cellPadding: 2, lineColor: [215, 215, 215], lineWidth: 0.1, textColor: [30, 30, 30], valign: 'middle' },
+                headStyles: { fillColor: [0, 0, 0], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8, lineColor: [0, 0, 0] },
+                alternateRowStyles: { fillColor: [247, 247, 247] },
+                didParseCell: (d) => { if (d.section === 'head') { const al = { 1: 'center', 2: 'right', 3: 'center', 4: 'right', 5: 'right' }[d.column.index]; if (al) d.cell.styles.halign = al; } },
+                columnStyles: { 0: { cellWidth: 'auto' }, 1: { halign: 'center', cellWidth: 12 }, 2: { halign: 'right', cellWidth: 25 }, 3: { halign: 'center', cellWidth: 13 }, 4: { halign: 'right', cellWidth: 22 }, 5: { halign: 'right', cellWidth: 27, fontStyle: 'bold' } }
+            });
+
+            // --- Toplamlar ---
+            let y = doc.lastAutoTable.finalY + 7;
+            if (y + 22 > PH - 24) { doc.addPage(); y = 20; }
+            const lx = 78, rx = PW - M;
+            doc.setTextColor(60); doc.setFont(F, 'normal'); doc.setFontSize(9);
+            doc.text(T("Ara Toplam (KDV Hariç)"), lx, y); doc.text(pdfMoney(calc.subTotal, calc.currency), rx, y, { align: 'right' });
+            doc.text(T(calc.kdvLabel), lx, y + 5.5); doc.text(pdfMoney(calc.kdvTotal, calc.currency), rx, y + 5.5, { align: 'right' });
+            doc.setFillColor(0, 0, 0); doc.rect(lx - 3, y + 9, rx - lx + 3, 10, 'F');
+            doc.setTextColor(255); doc.setFont(F, 'bold'); doc.setFontSize(9); doc.text(T("GENEL TOPLAM"), lx, y + 15.5);
+            doc.setFontSize(11.5); doc.text(pdfMoney(calc.grandTotal, calc.currency), rx - 3, y + 15.8, { align: 'right' });
+            y += 19;
+
+            // --- İmza alanları ---
+            let sy = Math.max(y + 20, PH - 46);
+            if (sy > PH - 28) { doc.addPage(); sy = 50; }
+            doc.setDrawColor(150); doc.setLineWidth(0.2);
+            doc.line(M + 4, sy, M + 54, sy); doc.line(PW - M - 54, sy, PW - M - 4, sy);
+            doc.setTextColor(110); doc.setFont(F, 'normal'); doc.setFontSize(8);
+            doc.text(T("Teslim Eden"), M + 29, sy + 4.5, { align: 'center' }); doc.text(T("Teslim Alan"), PW - M - 29, sy + 4.5, { align: 'center' });
+
+            // --- Alt bilgi (her sayfada) ---
+            const pages = doc.getNumberOfPages();
+            const contact = [COMPANY.address, COMPANY.phone, COMPANY.taxInfo].filter(Boolean).join('   |   ');
+            for (let p = 1; p <= pages; p++) {
+                doc.setPage(p);
+                doc.setDrawColor(0); doc.setLineWidth(0.4); doc.line(M, PH - 17, PW - M, PH - 17);
+                doc.setTextColor(90); doc.setFont(F, 'normal'); doc.setFontSize(7.5);
+                doc.text(T("Bizi tercih ettiğiniz için teşekkür ederiz."), PW / 2, PH - 12.5, { align: 'center' });
+                doc.setFont(F, 'bold'); doc.setTextColor(0); doc.text(T(`AKDENİZ MAKİNA  •  ${COMPANY.web}`), PW / 2, PH - 8.5, { align: 'center' });
+                if (contact) { doc.setFont(F, 'normal'); doc.setTextColor(90); doc.setFontSize(7); doc.text(T(contact), PW / 2, PH - 4.8, { align: 'center' }); }
+                if (pages > 1) { doc.setFont(F, 'normal'); doc.setFontSize(7); doc.setTextColor(120); doc.text(`${p}/${pages}`, PW - M, PH - 8.5, { align: 'right' }); }
+            }
+            return doc;
+        };
+        // PDF_END
 
         const Icon = (p) => React.createElement("svg", {...p, xmlns:"http://www.w3.org/2000/svg", width:"24", height:"24", viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:"2", strokeLinecap:"round", strokeLinejoin:"round"});
         const IconCheck = () => Icon({children: [React.createElement("polyline", {points:"20 6 9 17 4 12"})]});
@@ -570,30 +684,10 @@
             
             const handleDownloadPdf = () => {
                 if(!window.jspdf) { alert("PDF motoru yüklenemedi."); return; }
-                const { jsPDF } = window.jspdf;
-                const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a5' });
-                const trDate = new Date(printSale.date).toLocaleDateString('tr-TR');
-
-                doc.setFontSize(18); doc.setFont("helvetica", "bold"); doc.text(trToEn("AKDENIZ MAKINA"), 74, 15, { align: 'center' });
-                doc.setFontSize(12); doc.setFont("helvetica", "normal"); doc.text(trToEn("TESLIM FISI / FATURA"), 74, 23, { align: 'center' });
-                doc.line(10, 26, 138, 26);
-                doc.setFontSize(10); doc.text(trToEn(`SAYIN: ${printSale.customer}`), 10, 35); doc.text(trToEn(`Tarih: ${trDate}`), 10, 40); doc.text(trToEn(`Fis No: ${printSale.timestamp.slice(-6)}`), 138, 35, { align: 'right' });
-
-                const tableColumn = ["URUN", "MIK.", "FIYAT", "TUTAR"];
-                const tableRows = [];
-                (printSale.items || []).forEach(item => {
-                    const itemData = [ trToEn(item.product), item.count, formatMoney(item.price, item.currency).replace('₺', 'TL').replace('€', 'EUR').replace('$', 'USD'), formatMoney(item.total, item.currency).replace('₺', 'TL').replace('€', 'EUR').replace('$', 'USD') ];
-                    tableRows.push(itemData);
-                });
-
-                doc.autoTable({ head: [tableColumn], body: tableRows, startY: 45, theme: 'grid', headStyles: { fillColor: [50, 50, 50], textColor: [255, 255, 255], fontStyle: 'bold' }, styles: { fontSize: 9, font: 'helvetica' }, margin: { left: 10, right: 10 } });
-
-                let finalY = doc.lastAutoTable.finalY + 10;
-                doc.setFontSize(10); doc.text(trToEn(`Ara Toplam: ${formatMoney(printSale.subTotal, printSale.currency).replace('₺','TL')}`), 138, finalY, { align: 'right' });
-                doc.text(trToEn(`KDV Toplam: ${formatMoney(printSale.kdvTotal, printSale.currency).replace('₺','TL')}`), 138, finalY + 5, { align: 'right' });
-                doc.setFontSize(14); doc.setFont("helvetica", "bold"); doc.text(trToEn(`GENEL TOPLAM: ${formatMoney(printSale.grandTotal, printSale.currency).replace('₺','TL')}`), 138, finalY + 12, { align: 'right' });
-                doc.setFontSize(8); doc.setFont("helvetica", "italic"); doc.setTextColor(150); doc.text(trToEn("Tesekkur Ederiz."), 74, finalY + 25, { align: 'center' });
-                doc.save(`fis-${printSale.timestamp.slice(-6)}.pdf`);
+                try {
+                    const doc = buildReceiptPdf(window.jspdf.jsPDF, printSale);
+                    doc.save(`fis-${receiptNo(printSale.timestamp)}.pdf`);
+                } catch (e) { alert("PDF oluşturulamadı: " + e.message); }
             };
 
             const handleSaveClick = () => { if(!partName || !inputCounter) return alert("Eksik bilgi!"); const current = parseInt(inputCounter); if(isNaN(current)) return alert("Geçersiz sayı"); setModalType('select_machine'); setModalData({ current, action: 'save' }); setShowModal(true); };
@@ -779,29 +873,57 @@
 
             const ReceiptView = () => {
                 if (!printSale) return null;
-                let pSubTotal = printSale.subTotal; let pKdvTotal = printSale.kdvTotal;
-                if (pSubTotal === undefined || pKdvTotal === undefined) { pSubTotal = 0; pKdvTotal = 0; (printSale.items || []).forEach(i => { const raw = i.count * i.price; pSubTotal += raw; pKdvTotal += (i.kdvValue || 0); }); }
-                
-                return React.createElement("div", {className: "min-h-screen bg-white flex flex-col items-center pb-32 relative"},
-                    React.createElement("div", {id: "receipt-paper", className: "w-full max-w-lg bg-white p-8"},
-                        React.createElement("div", {className: "border-b-2 border-black pb-4 mb-4"}, 
-                            React.createElement("h1", {className: "text-2xl font-bold text-center"}, "AKDENİZ MAKİNA"), 
-                            React.createElement("h2", {className: "text-xl font-bold mt-6 text-center border-t border-black pt-4"}, "TESLİM FİŞİ / FATURA")
-                        ),
-                        React.createElement("div", {className: "flex justify-between mb-6 text-sm"}, React.createElement("div", {}, React.createElement("strong", {}, "SAYIN: "), React.createElement("div", {className:"uppercase font-semibold"}, printSale.customer), React.createElement("div", {className:"mt-1 text-xs text-gray-500"}, "Tarih: " + new Date(printSale.date).toLocaleDateString('tr-TR'))), React.createElement("div", {className: "text-right"}, React.createElement("strong", {}, "Fiş No: "), React.createElement("div", {}, printSale.timestamp.slice(-6)))),
-                        React.createElement("table", {className: "w-full border-collapse border border-black mb-6 text-sm"}, React.createElement("thead", {}, React.createElement("tr", {className: "bg-gray-100"}, React.createElement("th", {className: "border border-black p-2 text-left"}, "Ürün"), React.createElement("th", {className: "border border-black p-2 text-center"}, "Mik."), React.createElement("th", {className: "border border-black p-2 text-right"}, "Fiyat"), React.createElement("th", {className: "border border-black p-2 text-right"}, "Tutar"))), React.createElement("tbody", {}, (printSale.items || []).map((item, i) => React.createElement("tr", {key: i}, React.createElement("td", {className: "border border-black p-2"}, item.product), React.createElement("td", {className: "border border-black p-2 text-center"}, item.count), React.createElement("td", {className: "border border-black p-2 text-right"}, formatMoney(item.price, item.currency)), React.createElement("td", {className: "border border-black p-2 text-right"}, formatMoney(item.total, item.currency)))))),
-                        React.createElement("div", {className: "flex justify-end"}, 
-                            React.createElement("div", {className: "w-2/3 space-y-1 text-right text-sm"}, 
-                                React.createElement("div", {className: "flex justify-between"}, React.createElement("span", {}, "Ara Toplam:"), React.createElement("span", {}, formatMoney(pSubTotal, printSale.currency || 'TRY'))), 
-                                React.createElement("div", {className: "flex justify-between"}, React.createElement("span", {}, "Toplam KDV:"), React.createElement("span", {}, formatMoney(pKdvTotal, printSale.currency || 'TRY'))), 
-                                React.createElement("div", {className: "flex justify-between text-xl font-bold border-t border-black pt-2 mt-2"}, React.createElement("span", {}, "GENEL TOPLAM:"), React.createElement("span", {}, formatMoney(printSale.grandTotal, printSale.currency || 'TRY')))
+                const calc = receiptCalc(printSale);
+                const A = window.PDF_ASSETS || {};
+                const E = React.createElement;
+                const cur = calc.currency;
+                const th = (txt, al) => E("th", {className: "p-2 font-bold text-" + al}, txt);
+                const td = (txt, al, extra) => E("td", {className: "border-b border-gray-200 p-2 text-" + al + (extra || "")}, txt);
+                const printFix = { WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' };
+
+                return E("div", {className: "min-h-screen bg-white flex flex-col items-center pb-32 relative"},
+                    E("div", {id: "receipt-paper", className: "w-full max-w-lg bg-white"},
+                        // Siyah başlık bandı + logo
+                        E("div", {className: "bg-black text-white px-5 py-4 flex items-center justify-between gap-3", style: printFix},
+                            A.logo ? E("img", {src: A.logo, alt: "Akdeniz Makina", className: "h-16 w-auto flex-none"}) : E("h1", {className: "text-xl font-bold"}, "AKDENİZ MAKİNA"),
+                            E("div", {className: "text-right"},
+                                E("div", {className: "font-bold text-sm leading-tight"}, "TESLİM FİŞİ / FATURA"),
+                                E("div", {className: "text-xs text-gray-300 mt-2"}, "Fiş No: " + receiptNo(printSale.timestamp)),
+                                E("div", {className: "text-xs text-gray-300"}, "Tarih: " + receiptDate(printSale.date))
                             )
                         ),
-                        React.createElement("div", {className: "mt-10 text-center text-xs text-gray-400"}, "Teşekkür Ederiz.")
+                        E("div", {className: "p-5"},
+                            E("div", {className: "mb-4"}, E("div", {className: "text-[10px] text-gray-500 tracking-wider"}, "SAYIN"), E("div", {className: "uppercase font-bold text-lg"}, printSale.customer)),
+                            E("div", {className: "overflow-x-auto mb-5"},
+                                E("table", {className: "w-full border-collapse text-xs"},
+                                    E("thead", {}, E("tr", {className: "bg-black text-white", style: printFix}, th("Ürün", "left"), th("Mik.", "center"), th("Birim Fiyat", "right"), th("KDV %", "center"), th("KDV Tutarı", "right"), th("Toplam", "right"))),
+                                    E("tbody", {}, calc.lines.map((l, i) => E("tr", {key: i, className: i % 2 ? "bg-gray-50" : ""},
+                                        td(l.product, "left"), td(l.count, "center"), td(formatMoney(l.price, l.currency), "right", " whitespace-nowrap"),
+                                        td(l.rate > 0 ? "%" + l.rate : "%0", "center"), td(l.kdv > 0 ? formatMoney(l.kdv, l.currency) : "-", "right", " whitespace-nowrap"),
+                                        td(formatMoney(l.total, l.currency), "right", " font-bold whitespace-nowrap"))))
+                                )
+                            ),
+                            E("div", {className: "flex justify-end"},
+                                E("div", {className: "w-3/4 text-sm"},
+                                    E("div", {className: "flex justify-between text-gray-700"}, E("span", {}, "Ara Toplam (KDV Hariç)"), E("span", {}, formatMoney(calc.subTotal, cur))),
+                                    E("div", {className: "flex justify-between text-gray-700 mt-1"}, E("span", {}, calc.kdvLabel), E("span", {}, formatMoney(calc.kdvTotal, cur))),
+                                    E("div", {className: "flex justify-between items-center bg-black text-white font-bold px-3 py-2 mt-3", style: printFix}, E("span", {className: "text-xs"}, "GENEL TOPLAM"), E("span", {className: "text-lg"}, formatMoney(calc.grandTotal, cur)))
+                                )
+                            ),
+                            E("div", {className: "flex justify-between mt-14 text-xs text-gray-500 px-2"},
+                                E("div", {className: "w-2/5 text-center border-t border-gray-400 pt-1"}, "Teslim Eden"),
+                                E("div", {className: "w-2/5 text-center border-t border-gray-400 pt-1"}, "Teslim Alan")
+                            ),
+                            E("div", {className: "mt-8 pt-3 border-t-2 border-black text-center text-xs text-gray-500"},
+                                E("div", {}, "Bizi tercih ettiğiniz için teşekkür ederiz."),
+                                E("div", {className: "font-bold text-black mt-1"}, "AKDENİZ MAKİNA  •  " + COMPANY.web),
+                                [COMPANY.address, COMPANY.phone, COMPANY.taxInfo].filter(Boolean).length ? E("div", {className: "mt-1"}, [COMPANY.address, COMPANY.phone, COMPANY.taxInfo].filter(Boolean).join("   |   ")) : null
+                            )
+                        )
                     ),
-                    React.createElement("div", {className: "fixed bottom-0 left-0 w-full p-4 bg-white border-t border-gray-200 flex gap-2 z-[999] no-print safe-pb shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]"},
-                        React.createElement("button", {onClick: () => setViewMode('app'), className: "flex-none w-14 py-3 bg-slate-100 rounded-xl font-bold text-slate-600 flex justify-center items-center active:bg-slate-200"}, React.createElement(IconArrowLeft)),
-                        React.createElement("button", {onClick: handleDownloadPdf, className: "flex-1 py-3 bg-blue-600 rounded-xl font-bold text-white flex justify-center items-center gap-2 shadow-lg active:bg-blue-700 text-xs md:text-sm"}, React.createElement(IconFileText), "PDF İNDİR")
+                    E("div", {className: "fixed bottom-0 left-0 w-full p-4 bg-white border-t border-gray-200 flex gap-2 z-[999] no-print safe-pb shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]"},
+                        E("button", {onClick: () => setViewMode('app'), className: "flex-none w-14 py-3 bg-slate-100 rounded-xl font-bold text-slate-600 flex justify-center items-center active:bg-slate-200"}, E(IconArrowLeft)),
+                        E("button", {onClick: handleDownloadPdf, className: "flex-1 py-3 bg-blue-600 rounded-xl font-bold text-white flex justify-center items-center gap-2 shadow-lg active:bg-blue-700 text-xs md:text-sm"}, E(IconFileText), "PDF İNDİR")
                     )
                 );
             };
