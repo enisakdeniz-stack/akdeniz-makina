@@ -106,7 +106,7 @@
 
         // ===== FIŞ / PDF YARDIMCILARI =====
         // Firma bilgileri (fiş altında görünür). Boş bırakılanlar basılmaz; adres/telefon/vergi bilgisi eklemek için doldurun.
-        const COMPANY = { web: "www.akdenizmkn.com", address: "", phone: "", taxInfo: "" };
+        const COMPANY = { web: "www.akdenizmkn.com", facebook: "facebook.com/akdenizmakine", instagram: "instagram.com/akdeniz.makina", address: "129/13 Sokak No:22 4. Sanayi Sitesi, Bornova / İzmir", phone: "", taxInfo: "" };
 
         // PDF_BEGIN
         const receiptNo = (ts) => {
@@ -147,6 +147,8 @@
 
             // --- Siyah başlık bandı + logo ---
             doc.setFillColor(0, 0, 0); doc.rect(0, 0, PW, 34, 'F');
+            // Sağ yarı: siyahtan griye yumuşak geçiş
+            { const gx = 72, steps = 76; for (let i = 0; i < steps; i++) { const c = Math.round(105 * i / (steps - 1)); doc.setFillColor(c, c, c); doc.rect(gx + i * (PW - gx) / steps, 0, (PW - gx) / steps + 0.6, 34, 'F'); } }
             let logoOk = false;
             if (A.logo) {
                 try { const lh = 26, lw = lh * (A.logoW || 760) / (A.logoH || 434); doc.addImage(A.logo, 'JPEG', M, 4, lw, lh); logoOk = true; } catch (e) { logoOk = false; }
@@ -154,7 +156,7 @@
             if (!logoOk) { doc.setTextColor(255); doc.setFont(F, 'bold'); doc.setFontSize(18); doc.text(T("AKDENİZ MAKİNA"), M, 20); }
             doc.setTextColor(255); doc.setFont(F, 'bold'); doc.setFontSize(12);
             doc.text(T("TESLİM FİŞİ / FATURA"), PW - M, 14, { align: 'right' });
-            doc.setFont(F, 'normal'); doc.setFontSize(8.5); doc.setTextColor(200);
+            doc.setFont(F, 'normal'); doc.setFontSize(8.5); doc.setTextColor(235);
             doc.text(T(`Fiş No: ${receiptNo(sale.timestamp)}`), PW - M, 21, { align: 'right' });
             doc.text(T(`Tarih: ${receiptDate(sale.date)}`), PW - M, 26, { align: 'right' });
 
@@ -173,7 +175,7 @@
             ]);
             doc.autoTable({
                 head: [[T("Ürün"), T("Mik."), T("Birim Fiyat"), T("KDV %"), T("KDV Tutarı"), T("Toplam")]],
-                body, startY: 54, theme: 'grid', margin: { left: M, right: M, bottom: 24 },
+                body, startY: 54, theme: 'grid', margin: { left: M, right: M, bottom: 28 },
                 styles: { font: F, fontSize: 8.5, cellPadding: 2, lineColor: [215, 215, 215], lineWidth: 0.1, textColor: [30, 30, 30], valign: 'middle' },
                 headStyles: { fillColor: [0, 0, 0], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8, lineColor: [0, 0, 0] },
                 alternateRowStyles: { fillColor: [247, 247, 247] },
@@ -183,7 +185,7 @@
 
             // --- Toplamlar ---
             let y = doc.lastAutoTable.finalY + 7;
-            if (y + 22 > PH - 24) { doc.addPage(); y = 20; }
+            if (y + 22 > PH - 28) { doc.addPage(); y = 20; }
             const lx = 78, rx = PW - M;
             doc.setTextColor(60); doc.setFont(F, 'normal'); doc.setFontSize(9);
             doc.text(T("Ara Toplam (KDV Hariç)"), lx, y); doc.text(pdfMoney(calc.subTotal, calc.currency), rx, y, { align: 'right' });
@@ -203,15 +205,18 @@
 
             // --- Alt bilgi (her sayfada) ---
             const pages = doc.getNumberOfPages();
+            const socials = [COMPANY.facebook, COMPANY.instagram].filter(Boolean).join('   •   ');
             const contact = [COMPANY.address, COMPANY.phone, COMPANY.taxInfo].filter(Boolean).join('   |   ');
             for (let p = 1; p <= pages; p++) {
                 doc.setPage(p);
-                doc.setDrawColor(0); doc.setLineWidth(0.4); doc.line(M, PH - 17, PW - M, PH - 17);
+                doc.setDrawColor(0); doc.setLineWidth(0.4); doc.line(M, PH - 22, PW - M, PH - 22);
                 doc.setTextColor(90); doc.setFont(F, 'normal'); doc.setFontSize(7.5);
-                doc.text(T("Bizi tercih ettiğiniz için teşekkür ederiz."), PW / 2, PH - 12.5, { align: 'center' });
-                doc.setFont(F, 'bold'); doc.setTextColor(0); doc.text(T(`AKDENİZ MAKİNA  •  ${COMPANY.web}`), PW / 2, PH - 8.5, { align: 'center' });
-                if (contact) { doc.setFont(F, 'normal'); doc.setTextColor(90); doc.setFontSize(7); doc.text(T(contact), PW / 2, PH - 4.8, { align: 'center' }); }
-                if (pages > 1) { doc.setFont(F, 'normal'); doc.setFontSize(7); doc.setTextColor(120); doc.text(`${p}/${pages}`, PW - M, PH - 8.5, { align: 'right' }); }
+                doc.text(T("Bizi tercih ettiğiniz için teşekkür ederiz."), PW / 2, PH - 17.5, { align: 'center' });
+                doc.setFont(F, 'bold'); doc.setTextColor(0); doc.setFontSize(8); doc.text(T(`AKDENİZ MAKİNA  •  ${COMPANY.web}`), PW / 2, PH - 13, { align: 'center' });
+                doc.setFont(F, 'normal'); doc.setTextColor(70); doc.setFontSize(7.5);
+                if (socials) doc.text(T(socials), PW / 2, PH - 8.8, { align: 'center' });
+                if (contact) { doc.setFontSize(7); doc.setTextColor(90); doc.text(T(contact), PW / 2, PH - 4.8, { align: 'center' }); }
+                if (pages > 1) { doc.setFont(F, 'normal'); doc.setFontSize(7); doc.setTextColor(120); doc.text(`${p}/${pages}`, PW - M, PH - 13, { align: 'right' }); }
             }
             return doc;
         };
@@ -884,12 +889,12 @@
                 return E("div", {className: "min-h-screen bg-white flex flex-col items-center pb-32 relative"},
                     E("div", {id: "receipt-paper", className: "w-full max-w-lg bg-white"},
                         // Siyah başlık bandı + logo
-                        E("div", {className: "bg-black text-white px-5 py-4 flex items-center justify-between gap-3", style: printFix},
+                        E("div", {className: "text-white px-5 py-4 flex items-center justify-between gap-3", style: {...printFix, background: "linear-gradient(90deg, #000 0%, #000 48%, #696969 100%)"}},
                             A.logo ? E("img", {src: A.logo, alt: "Akdeniz Makina", className: "h-16 w-auto flex-none"}) : E("h1", {className: "text-xl font-bold"}, "AKDENİZ MAKİNA"),
                             E("div", {className: "text-right"},
                                 E("div", {className: "font-bold text-sm leading-tight"}, "TESLİM FİŞİ / FATURA"),
-                                E("div", {className: "text-xs text-gray-300 mt-2"}, "Fiş No: " + receiptNo(printSale.timestamp)),
-                                E("div", {className: "text-xs text-gray-300"}, "Tarih: " + receiptDate(printSale.date))
+                                E("div", {className: "text-xs text-gray-100 mt-2"}, "Fiş No: " + receiptNo(printSale.timestamp)),
+                                E("div", {className: "text-xs text-gray-100"}, "Tarih: " + receiptDate(printSale.date))
                             )
                         ),
                         E("div", {className: "p-5"},
@@ -917,6 +922,7 @@
                             E("div", {className: "mt-8 pt-3 border-t-2 border-black text-center text-xs text-gray-500"},
                                 E("div", {}, "Bizi tercih ettiğiniz için teşekkür ederiz."),
                                 E("div", {className: "font-bold text-black mt-1"}, "AKDENİZ MAKİNA  •  " + COMPANY.web),
+                                [COMPANY.facebook, COMPANY.instagram].filter(Boolean).length ? E("div", {className: "mt-1"}, [COMPANY.facebook, COMPANY.instagram].filter(Boolean).join("   •   ")) : null,
                                 [COMPANY.address, COMPANY.phone, COMPANY.taxInfo].filter(Boolean).length ? E("div", {className: "mt-1"}, [COMPANY.address, COMPANY.phone, COMPANY.taxInfo].filter(Boolean).join("   |   ")) : null
                             )
                         )
