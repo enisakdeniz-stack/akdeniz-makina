@@ -106,7 +106,7 @@
 
         // ===== FIŞ / PDF YARDIMCILARI =====
         // Firma bilgileri (fiş altında görünür). Boş bırakılanlar basılmaz; adres/telefon/vergi bilgisi eklemek için doldurun.
-        const COMPANY = { web: "www.akdenizmkn.com", facebook: "facebook.com/akdenizmakine", instagram: "instagram.com/akdeniz.makina", address: "129/13 Sokak No:22 4. Sanayi Sitesi, Bornova / İzmir", phone: "", taxInfo: "" };
+        const COMPANY = { web: "www.akdenizmkn.com", facebook: "facebook.com/akdenizmakine", instagram: "instagram.com/akdeniz.makina", address: "129/13 Sokak No:22 4. Sanayi Sitesi, Bornova / İzmir", email: "info@akdenizmkn.com", phone: "", taxInfo: "" };
 
         // PDF_BEGIN
         const receiptNo = (ts) => {
@@ -193,22 +193,12 @@
             doc.setFillColor(0, 0, 0); doc.rect(lx - 3, y + 9, rx - lx + 3, 10, 'F');
             doc.setTextColor(255); doc.setFont(F, 'bold'); doc.setFontSize(9); doc.text(T("GENEL TOPLAM"), lx, y + 15.5);
             doc.setFontSize(11.5); doc.text(pdfMoney(calc.grandTotal, calc.currency), rx - 3, y + 15.8, { align: 'right' });
-            doc.setTextColor(110); doc.setFont(F, 'normal'); doc.setFontSize(7.5);
-            doc.text(T("Bu belge proforma niteliğindedir; mali değeri olan fatura yerine geçmez."), M, y + 1, { maxWidth: 62 });
             y += 19;
-
-            // --- İmza alanları ---
-            let sy = Math.max(y + 20, PH - 46);
-            if (sy > PH - 28) { doc.addPage(); sy = 50; }
-            doc.setDrawColor(150); doc.setLineWidth(0.2);
-            doc.line(M + 4, sy, M + 54, sy); doc.line(PW - M - 54, sy, PW - M - 4, sy);
-            doc.setTextColor(110); doc.setFont(F, 'normal'); doc.setFontSize(8);
-            doc.text(T("Düzenleyen"), M + 29, sy + 4.5, { align: 'center' }); doc.text(T("Müşteri Onayı"), PW - M - 29, sy + 4.5, { align: 'center' });
 
             // --- Alt bilgi (her sayfada) ---
             const pages = doc.getNumberOfPages();
             const socials = [COMPANY.facebook, COMPANY.instagram].filter(Boolean).join('   •   ');
-            const contact = [COMPANY.address, COMPANY.phone, COMPANY.taxInfo].filter(Boolean).join('   |   ');
+            const contact = [COMPANY.address, COMPANY.email, COMPANY.phone, COMPANY.taxInfo].filter(Boolean).join('   |   ');
             for (let p = 1; p <= pages; p++) {
                 doc.setPage(p);
                 doc.setDrawColor(0); doc.setLineWidth(0.4); doc.line(M, PH - 22, PW - M, PH - 22);
@@ -929,16 +919,11 @@
                                     E("div", {className: "flex justify-between items-center bg-black text-white font-bold px-3 py-2 mt-3", style: printFix}, E("span", {className: "text-xs"}, "GENEL TOPLAM"), E("span", {className: "text-lg"}, formatMoney(calc.grandTotal, cur)))
                                 )
                             ),
-                            E("div", {className: "mt-4 text-[11px] text-gray-500"}, "Bu belge proforma niteliğindedir; mali değeri olan fatura yerine geçmez."),
-                            E("div", {className: "flex justify-between mt-12 text-xs text-gray-500 px-2"},
-                                E("div", {className: "w-2/5 text-center border-t border-gray-400 pt-1"}, "Düzenleyen"),
-                                E("div", {className: "w-2/5 text-center border-t border-gray-400 pt-1"}, "Müşteri Onayı")
-                            ),
                             E("div", {className: "mt-8 pt-3 border-t-2 border-black text-center text-xs text-gray-500"},
                                 E("div", {}, "Bizi tercih ettiğiniz için teşekkür ederiz."),
                                 E("div", {className: "font-bold text-black mt-1"}, "AKDENİZ MAKİNA  •  " + COMPANY.web),
                                 [COMPANY.facebook, COMPANY.instagram].filter(Boolean).length ? E("div", {className: "mt-1"}, [COMPANY.facebook, COMPANY.instagram].filter(Boolean).join("   •   ")) : null,
-                                [COMPANY.address, COMPANY.phone, COMPANY.taxInfo].filter(Boolean).length ? E("div", {className: "mt-1"}, [COMPANY.address, COMPANY.phone, COMPANY.taxInfo].filter(Boolean).join("   |   ")) : null
+                                [COMPANY.address, COMPANY.email, COMPANY.phone, COMPANY.taxInfo].filter(Boolean).length ? E("div", {className: "mt-1"}, [COMPANY.address, COMPANY.email, COMPANY.phone, COMPANY.taxInfo].filter(Boolean).join("   |   ")) : null
                             )
                         )
                     ),
