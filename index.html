@@ -536,10 +536,17 @@
             const renameSuggestions = useMemo(() => suggestParts(renameOld), [renameOld, uniqueProducts, recentPartNames]);
             
             // Belirli bir makine + parça için son sayaç bilgisini hesaplar (artık makine kaydet anında seçildiği için fonksiyon halinde)
+            // Partinin en son kapandığı an: "resets" kaydı VEYA "BİTTİ" bayraklı log (kayıt elle düzenlenip bayrak eklenmişse de parti kapalı sayılır)
+            const getLastBatchCut = (pName) => {
+                let cut = null;
+                batchResets.forEach(r => { if (r.partName === pName && r.resetDate) { const d = new Date(r.resetDate); if (!cut || d > cut) cut = d; } });
+                recentLogs.forEach(l => { if (l.partName === pName && l.type === 'finish' && l.timestamp) { const d = new Date(l.timestamp); if (!cut || d > cut) cut = d; } });
+                return cut;
+            };
+
             const getMachineContext = (machineId, pNameRaw) => {
                 const pName = pNameRaw.toUpperCase().trim();
-                const pResets = batchResets.filter(r => r.partName === pName).sort((a,b) => new Date(b.resetDate) - new Date(a.resetDate));
-                const latestResetDate = pResets.length ? new Date(pResets[0].resetDate) : null;
+                const latestResetDate = getLastBatchCut(pName);
                 let relevantLogs = recentLogs.filter(l => l.partName === pName && l.machineId === machineId && l.totalCounter !== undefined);
                 if (latestResetDate) relevantLogs = relevantLogs.filter(l => new Date(l.timestamp) > latestResetDate);
                 const lastRec = relevantLogs.length > 0 ? relevantLogs[0] : null;
@@ -551,8 +558,7 @@
                 const pNameUpper = partName.toUpperCase().trim(); 
                 const todayStr = today;
                 const currentYear = String(new Date().getFullYear()); 
-                const resets = batchResets.filter(r => r.partName === pNameUpper).sort((a,b) => new Date(b.resetDate) - new Date(a.resetDate)); 
-                const lastReset = resets.length ? new Date(resets[0].resetDate) : new Date(0); 
+                const lastReset = getLastBatchCut(pNameUpper) || new Date(0);
                 let s = { daily: 0, batch: 0, yearly: 0 }; 
                 recentLogs.forEach(l => { 
                     if (l.partName === pNameUpper) { 
